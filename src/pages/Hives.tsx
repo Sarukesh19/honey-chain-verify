@@ -1,9 +1,8 @@
-import { useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import { ArrowLeft, Hexagon, MapPin, Sprout } from "lucide-react";
 import { Link } from "react-router";
 
-import { api } from "@/convex/_generated/api";
+import { useDashboard } from "@/lib/dataLayer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +20,7 @@ const statusMeta: Record<string, { label: string; cls: string }> = {
 
 /** HIVE MANAGEMENT (Module 2) — registered hives with status. */
 export default function Hives() {
-  const dashboard = useQuery(api.apiary.getDashboard, { beekeeper_id: "BK-001" });
+  const dashboard = useDashboard();
 
   return (
     <main className="honeycomb-bg min-h-screen">

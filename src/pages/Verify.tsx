@@ -1,4 +1,4 @@
-import { useQuery } from "convex/react";
+import { useBatchVerification } from "@/lib/dataLayer";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -34,9 +34,7 @@ import { Separator } from "@/components/ui/separator";
 /** Public, no-login page opened by scanning a batch QR code (/verify/{batch_id}). */
 export default function VerifyPage() {
   const { batchId = "" } = useParams();
-  const result = useQuery(api.traceability.getBatchForVerification, {
-    batch_id: batchId,
-  });
+  const result = useBatchVerification(batchId);
 
   return (
     <main className="honeycomb-bg min-h-screen">
@@ -382,9 +380,9 @@ function VerifiedReport({ result }: { result: VerifyResult }) {
               Batch metadata was sealed as block #{batch.block_number} at{" "}
               {new Date(batch.created_at).toLocaleString()}. Hashes are
               recomputed on every scan; any tampering would break the chain and
-              flag this batch. Prototype Blockchain Record: SHA-256 hash-chain
-              simulation, not a live blockchain network. Raw IoT sensor data is
-              never stored on-chain.
+              flag this batch. Prototype Blockchain Record — Not Yet Connected
+              to a Live Chain (SHA-256 hash-chain simulation). Raw IoT sensor
+              data is never stored on-chain.
             </p>
           </CardContent>
         </Card>

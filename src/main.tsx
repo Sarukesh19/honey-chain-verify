@@ -20,6 +20,7 @@ const Hives = lazy(() => import("./pages/Hives.tsx"));
 const HiveDetails = lazy(() => import("./pages/HiveDetails.tsx"));
 const Batches = lazy(() => import("./pages/Batches.tsx"));
 const Blockchain = lazy(() => import("./pages/Blockchain.tsx"));
+const Roadmap = lazy(() => import("./pages/Roadmap.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 // Simple loading fallback for route transitions
@@ -160,6 +161,14 @@ createRoot(document.getElementById("root")!).render(
                 element={
                   <RequireAuth>
                     <Blockchain />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/roadmap"
+                element={
+                  <RequireAuth>
+                    <Roadmap />
                   </RequireAuth>
                 }
               />

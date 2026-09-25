@@ -1,4 +1,3 @@
-import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -15,7 +14,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 
-import { api } from "@/convex/_generated/api";
+import { useBatchIds, useSeedDemoData } from "@/lib/dataLayer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,8 +27,8 @@ import { Input } from "@/components/ui/input";
  */
 export default function Landing() {
   const navigate = useNavigate();
-  const seedDemo = useMutation(api.demo.seedDemoData);
-  const batchIds = useQuery(api.traceability.listBatchIds, {});
+  const seedDemo = useSeedDemoData();
+  const batchIds = useBatchIds();
   const [code, setCode] = useState("");
   const seedTriggered = useRef(false);
 

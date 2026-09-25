@@ -1,4 +1,3 @@
-import { useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -10,7 +9,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router";
 
-import { api } from "@/convex/_generated/api";
+import { useMarketplaceBatches } from "@/lib/dataLayer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,7 +20,7 @@ import { Card, CardContent } from "@/components/ui/card";
  * "verified product → market trust" story.
  */
 export default function Marketplace() {
-  const batches = useQuery(api.apiary.listVerifiedBatches, {});
+  const batches = useMarketplaceBatches();
 
   return (
     <main className="honeycomb-bg min-h-screen">

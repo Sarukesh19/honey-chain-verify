@@ -1,11 +1,10 @@
-import { useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import { ArrowLeft, Blocks, Hexagon, Link2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { Link as LinkIcon } from "lucide-react";
 
-import { api } from "@/convex/_generated/api";
+import { useBatchBlocks, useBatchIds } from "@/lib/dataLayer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,13 +31,10 @@ interface BlockRow {
  */
 export default function Blockchain() {
   const [params] = useSearchParams();
-  const batches = useQuery(api.traceability.listBatchIds, {});
+  const batches = useBatchIds();
   const [selected, setSelected] = useState(params.get("batch") ?? "");
   const activeId = selected || batches?.[0] || "";
-  const blocks = useQuery(
-    api.traceability.getBatchBlocks,
-    activeId ? { batch_id: activeId } : "skip",
-  );
+  const blocks = useBatchBlocks(activeId);
 
   const stageIcons: Record<string, string> = {
     batch_created: "📦",
@@ -69,7 +65,7 @@ export default function Blockchain() {
         <div>
           <Badge variant="secondary" className="mb-3 gap-1.5">
             <Blocks className="size-3.5 text-primary" />
-            Hash-chained ledger · Prototype Blockchain Record
+            Prototype Blockchain Record — Not Yet Connected to a Live Chain
           </Badge>
           <h1 className="text-2xl font-bold tracking-tight">
             Blockchain traceability

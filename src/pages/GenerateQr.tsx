@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import QRCode from "qrcode";
 
-import { api } from "@/convex/_generated/api";
+import { useBatchIds } from "@/lib/dataLayer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +23,7 @@ import { Input } from "@/components/ui/input";
  * jar label at packaging time (see README scaling notes).
  */
 export default function GenerateQrPage() {
-  const batchIds = useQuery(api.traceability.listBatchIds, {});
+  const batchIds = useBatchIds();
   const [params] = useSearchParams();
   const [batchId, setBatchId] = useState(params.get("batch") ?? "");
   const [dataUrl, setDataUrl] = useState<string | null>(null);

@@ -1,4 +1,3 @@
-import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -14,7 +13,7 @@ import {
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
-import { api } from "@/convex/_generated/api";
+import { useAllBatches, useBatchTimeline, useRecordStage } from "@/lib/dataLayer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -66,12 +65,9 @@ export default function Batches() {
   const [params] = useSearchParams();
   const selectedId = params.get("batch") ?? params.get("created") ?? "";
 
-  const allBatches = useQuery(api.traceability.listAllBatches, {});
-  const timeline = useQuery(
-    api.traceability.getBatchTimeline,
-    selectedId ? { batch_id: selectedId } : "skip",
-  );
-  const recordStage = useMutation(api.traceability.recordStage);
+  const allBatches = useAllBatches();
+  const timeline = useBatchTimeline(selectedId);
+  const recordStage = useRecordStage();
 
   const list: Batch[] = allBatches ?? [];
 

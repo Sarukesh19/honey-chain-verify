@@ -37,7 +37,16 @@ import {
   YAxis,
 } from "recharts";
 
-import { api } from "@/convex/_generated/api";
+import { RoleSwitcher } from "@/components/RoleSwitcher";
+import {
+  CURRENT_BEEKEEPER,
+  useAlerts,
+  useAnalytics,
+  useCreateBatch,
+  useCreateHive,
+  useDashboard,
+  useSimulatedSensorStream,
+} from "@/lib/dataLayer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,7 +66,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
 
-const BK = { id: "BK-001", name: "Ramesh Patil" };
+const BK = CURRENT_BEEKEEPER;
 
 const statusMeta: Record<
   string,
@@ -140,10 +149,10 @@ function TotalsCard({
 export default function Dashboard() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
-  const dashboard = useQuery(api.apiary.getDashboard, { beekeeper_id: BK.id });
-  const alerts = useQuery(api.apiary.getAlerts, {});
-  const analytics = useQuery(api.apiary.getAnalytics, {});
-  const pushReading = useMutation(api.apiary.pushSimulatedReading);
+  const dashboard = useDashboard(BK.id);
+  const alerts = useAlerts();
+  const analytics = useAnalytics();
+  const pushReading = useSimulatedSensorStream();
 
   // --- Simulated IoT stream ("Demo IoT Data"): 5s cadence per hive ---------
   const [live, setLive] = useState(true);
@@ -155,17 +164,10 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!live) return;
-    const jitter = (base: number, amp: number) =>
-      Math.round((base + (Math.random() - 0.5) * 2 * amp) * 10) / 10;
+    // Demo IoT Data: simulated 5-second sensor cadence per hive.
     const timer = setInterval(() => {
       for (const id of hiveIds) {
-        void pushReading({
-          hive_id: id,
-          temperature: jitter(34, 1.2),
-          humidity: jitter(62, 5),
-          weight: 30 + Math.random() * 8,
-          sound: jitter(43, 3),
-        });
+        void pushReading(id);
       }
     }, 5000);
     return () => clearInterval(timer);
@@ -190,12 +192,18 @@ export default function Dashboard() {
               Beekeeper portal
             </Badge>
           </div>
+          <div className="hidden sm:block">
+            <RoleSwitcher current="beekeeper" />
+          </div>
           <nav className="flex items-center gap-1">
             <Button asChild variant="ghost" size="sm">
               <Link to="/marketplace">Marketplace</Link>
             </Button>
             <Button asChild variant="ghost" size="sm">
               <Link to="/blockchain">Blockchain</Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/roadmap">Roadmap</Link>
             </Button>
             <Button
               variant={live ? "secondary" : "outline"}
@@ -285,7 +293,7 @@ export default function Dashboard() {
                 <Bell className="size-4 text-yellow-600" />
                 Recent alerts
                 <span className="text-[10px] font-normal text-muted-foreground">
-                  (Demo IoT Data · AI Prototype Analysis)
+                  (Demo IoT Data · AI Prototype Analysis, Rule-Based Demo Model)
                 </span>
               </CardTitle>
             </CardHeader>
@@ -408,10 +416,9 @@ export default function Dashboard() {
                       />
                     </BarChart>
                   </ResponsiveContainer>
-                </div>
-                <p className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground/70">
-                  AI Prototype Analysis · Demo IoT Data
-                </p>
+                </div>                            <p className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                              AI Prototype Analysis (Rule-Based Demo Model) · Demo IoT Data
+                            </p>
               </CardContent>
             </Card>
           </div>
@@ -577,7 +584,7 @@ export default function Dashboard() {
 
 /** Add Hive dialog (Module 2). */
 function AddHiveDialog() {
-  const createHive = useMutation(api.apiary.createHive);
+  const createHive = useCreateHive();
   const [open, setOpen] = useState(false);
   const [hiveId, setHiveId] = useState("");
   const [location, setLocation] = useState("");
@@ -668,9 +675,9 @@ function AddHiveDialog() {
 
 /** Add Batch dialog (Module 4) → creates + seals → navigates to batches. */
 function AddBatchDialog() {
-  const createBatch = useMutation(api.traceability.createBatch);
+  const createBatch = useCreateBatch();
   const navigate = useNavigate();
-  const dashboard = useQuery(api.apiary.getDashboard, { beekeeper_id: BK.id });
+  const dashboard = useDashboard(BK.id);
   const [open, setOpen] = useState(false);
   const [hiveId, setHiveId] = useState("");
   const [quantity, setQuantity] = useState("");

@@ -1,4 +1,3 @@
-import { useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import {
   Activity,
@@ -20,7 +19,7 @@ import {
   YAxis,
 } from "recharts";
 
-import { api } from "@/convex/_generated/api";
+import { useHiveDetails } from "@/lib/dataLayer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,7 +38,7 @@ const statusMeta: Record<string, { label: string; cls: string }> = {
 /** HIVE DETAILS (Module 2 + 3): IoT charts + AI Smart Analytics. */
 export default function HiveDetails() {
   const { hiveId = "" } = useParams();
-  const details = useQuery(api.apiary.getHiveDetails, { hive_id: hiveId });
+  const details = useHiveDetails(hiveId);
 
   if (details === undefined) {
     return (
@@ -64,7 +63,7 @@ export default function HiveDetails() {
     );
   }
 
-  const { hive, readings, prediction } = details;
+  const { hive, readings, analysis: prediction } = details;
   const meta = statusMeta[hive.status] ?? statusMeta.healthy;
 
   // Chart data: timestamps → readable hour labels.
@@ -160,6 +159,9 @@ export default function HiveDetails() {
                     <AlertTriangle className="size-5 text-destructive" />
                   )}
                   AI Smart Analytics
+                  <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                    (Rule-Based Demo Model)
+                  </span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
@@ -200,7 +202,7 @@ export default function HiveDetails() {
                   </p>
                 </div>
                 <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
-                  AI Prototype Analysis · derived from Demo IoT Data
+                  AI Prototype Analysis (Rule-Based Demo Model) · derived from Demo IoT Data
                 </p>
               </CardContent>
             </Card>
