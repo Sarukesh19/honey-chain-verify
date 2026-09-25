@@ -13,6 +13,7 @@ import {
   Package,
   ShieldAlert,
   ShieldCheck,
+  Truck,
   User,
   X,
 } from "lucide-react";
@@ -111,6 +112,15 @@ interface IntegrityReport {
   anomaly: string | null;
 }
 
+interface TimelineEntry {
+  stage: string;
+  actor: string;
+  note: string | null;
+  block_number: number;
+  tx_hash: string;
+  recorded_at: number;
+}
+
 interface VerifyResult {
   batch: {
     batch_id: string;
@@ -118,8 +128,10 @@ interface VerifyResult {
     beekeeper_id: string;
     beekeeper_name: string;
     harvest_date: string;
-    processing_date: string;
-    packaging_date: string;
+    harvest_location: string | null;
+    processing_date: string | null;
+    packaging_date: string | null;
+    distributed_date: string | null;
     quantity_kg: number;
     floral_source: string;
     status: string;
@@ -129,11 +141,12 @@ interface VerifyResult {
     created_at: number;
   };
   hive: { hive_id: string; location: string; status: string } | null;
+  timeline: TimelineEntry[];
   integrity: IntegrityReport | null;
 }
 
 function VerifiedReport({ result }: { result: VerifyResult }) {
-  const { batch, hive, integrity } = result;
+  const { batch, hive, integrity, timeline } = result;
   const verified = integrity?.chain_intact ?? false;
 
   return (
@@ -231,8 +244,8 @@ function VerifiedReport({ result }: { result: VerifyResult }) {
               />
               <Detail
                 icon={<MapPin className="size-4" />}
-                label="Apiary location"
-                value={hive?.location ?? "—"}
+                label="Harvest location"
+                value={batch.harvest_location ?? hive?.location ?? "—"}
               />
               <Detail
                 icon={<Package className="size-4" />}
@@ -243,7 +256,7 @@ function VerifiedReport({ result }: { result: VerifyResult }) {
 
             <Separator />
 
-            {/* Supply-chain timeline: harvest → processing → packaging */}
+            {/* Supply-chain timeline: harvest → processing → packaging → distribution */}
             <div>
               <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Supply chain timeline
@@ -253,10 +266,17 @@ function VerifiedReport({ result }: { result: VerifyResult }) {
                   { label: "Harvested", date: batch.harvest_date, icon: <Droplets className="size-4" /> },
                   { label: "Processed", date: batch.processing_date, icon: <FlaskConical className="size-4" /> },
                   { label: "Packaged", date: batch.packaging_date, icon: <Package className="size-4" /> },
+                  { label: "Distributed", date: batch.distributed_date, icon: <Truck className="size-4" /> },
                 ].map((step, i, arr) => (
                   <li key={step.label} className="flex gap-3">
                     <div className="flex flex-col items-center">
-                      <div className="flex size-8 items-center justify-center rounded-full bg-primary/12 text-primary">
+                      <div
+                        className={`flex size-8 items-center justify-center rounded-full ${
+                          step.date
+                            ? "bg-primary/12 text-primary"
+                            : "bg-muted text-muted-foreground/50"
+                        }`}
+                      >
                         {step.icon}
                       </div>
                       {i < arr.length - 1 && (
@@ -264,10 +284,12 @@ function VerifiedReport({ result }: { result: VerifyResult }) {
                       )}
                     </div>
                     <div className="pb-5">
-                      <p className="text-sm font-medium">{step.label}</p>
+                      <p className={`text-sm font-medium ${step.date ? "" : "text-muted-foreground"}`}>
+                        {step.label}
+                      </p>
                       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <Calendar className="size-3" />
-                        {step.date}
+                        {step.date ?? "Pending"}
                       </p>
                     </div>
                   </li>
@@ -278,7 +300,97 @@ function VerifiedReport({ result }: { result: VerifyResult }) {
         </Card>
       </motion.div>
 
-      {/* ---- Ledger proof ---- */}
+      {/* ---- Traceability checklist ---- */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.12 }}
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <BadgeCheck className="size-5 text-primary" />
+              Traceability
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {[
+              {
+                ok: true,
+                label: "Source Verified",
+                detail: `Hive ${batch.hive_id}${hive ? ` · ${hive.location}` : ""}`,
+              },
+              {
+                ok: Boolean(timeline.some((t) => t.stage === "created")),
+                label: "Batch Verified",
+                detail: `Sealed as block #${batch.block_number}`,
+              },
+              {
+                ok: Boolean(timeline.some((t) => t.stage === "processed")),
+                label: "Processing Recorded",
+                detail: batch.processing_date ?? "Not yet processed",
+              },
+              {
+                ok: Boolean(timeline.some((t) => t.stage === "packaged")),
+                label: "Packaging Recorded",
+                detail: batch.packaging_date ?? "Not yet packaged",
+              },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5"
+              >
+                {item.ok ? (
+                  <BadgeCheck className="size-5 shrink-0 text-primary" />
+                ) : (
+                  <ShieldAlert className="size-5 shrink-0 text-muted-foreground/50" />
+                )}
+                <div>
+                  <p className={`text-sm font-medium ${item.ok ? "" : "text-muted-foreground"}`}>
+                    {item.label}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{item.detail}</p>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* ---- Verified on Blockchain (prominent) ---- */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.14 }}
+      >
+        <Card className="border-primary/40 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Link2 className="size-5 text-primary" />
+              Verified on Blockchain
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <CheckItem ok={integrity?.hash_match ?? false} label="Content hash match" />
+              <CheckItem ok={integrity?.tx_hash_valid ?? false} label="Block signature valid" />
+              <CheckItem ok={integrity?.prev_hash_valid ?? false} label="Chain link intact" />
+            </div>
+            <HashRow label="Content hash (SHA-256)" hash={batch.content_hash} />
+            <HashRow label="Transaction hash (block ID)" hash={batch.tx_hash} />
+            <p className="text-xs leading-5 text-muted-foreground">
+              Batch metadata was sealed as block #{batch.block_number} at{" "}
+              {new Date(batch.created_at).toLocaleString()}. Hashes are
+              recomputed on every scan; any tampering would break the chain and
+              flag this batch. Prototype Blockchain Record: SHA-256 hash-chain
+              simulation, not a live blockchain network. Raw IoT sensor data is
+              never stored on-chain.
+            </p>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* ---- Ledger proof (technical detail) ---- */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}

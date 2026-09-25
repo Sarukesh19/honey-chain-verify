@@ -6,18 +6,36 @@ import {
   Bell,
   CheckCircle2,
   Droplets,
-  Gauge,
+  FlaskConical,
   Hexagon,
+  Link2,
   LogOut,
   Mic,
+  Package,
+  PieChart as PieChartIcon,
   Plus,
+  QrCode,
   Scale,
   Sprout,
   Thermometer,
+  TrendingUp,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { api } from "@/convex/_generated/api";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +59,27 @@ import { useAuth } from "@/hooks/use-auth";
 
 const BK = { id: "BK-001", name: "Ramesh Patil" };
 
-/** Sensor-metric row used inside hive cards. */
+const statusMeta: Record<
+  string,
+  { label: string; cls: string; dot: string }
+> = {
+  healthy: {
+    label: "Healthy",
+    cls: "bg-primary/12 text-primary border-primary/30",
+    dot: "bg-primary",
+  },
+  warning: {
+    label: "Warning",
+    cls: "bg-yellow-500/12 text-yellow-700 border-yellow-500/30",
+    dot: "bg-yellow-500",
+  },
+  disease_risk: {
+    label: "Critical",
+    cls: "bg-destructive/12 text-destructive border-destructive/30",
+    dot: "bg-destructive",
+  },
+};
+
 function Metric({
   icon,
   label,
@@ -75,39 +113,41 @@ function Metric({
   );
 }
 
-const statusMeta: Record<
-  string,
-  { label: string; cls: string; dot: string }
-> = {
-  healthy: {
-    label: "Healthy",
-    cls: "bg-primary/12 text-primary border-primary/30",
-    dot: "bg-primary",
-  },
-  warning: {
-    label: "Warning",
-    cls: "bg-yellow-500/12 text-yellow-700 border-yellow-500/30",
-    dot: "bg-yellow-500",
-  },
-  disease_risk: {
-    label: "Disease Risk",
-    cls: "bg-destructive/12 text-destructive border-destructive/30",
-    dot: "bg-destructive",
-  },
-};
+function TotalsCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-3 p-4">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-primary">
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-xs text-muted-foreground">{label}</p>
+          <p className="text-xl font-bold">{value}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
-  const dashboard = useQuery(api.apiary.getDashboard, {
-    beekeeper_id: BK.id,
-  });
+  const dashboard = useQuery(api.apiary.getDashboard, { beekeeper_id: BK.id });
   const alerts = useQuery(api.apiary.getAlerts, {});
+  const analytics = useQuery(api.apiary.getAnalytics, {});
   const pushReading = useMutation(api.apiary.pushSimulatedReading);
 
-  // --- Simulated IoT stream: every 5s push a fresh reading for each hive ---
-  const liveRef = useRef(true);
+  // --- Simulated IoT stream ("Demo IoT Data"): 5s cadence per hive ---------
   const [live, setLive] = useState(true);
+  const liveRef = useRef(true);
   const hiveIds = useMemo(
     () => dashboard?.hives.map((h) => h.hive_id) ?? [],
     [dashboard],
@@ -123,7 +163,7 @@ export default function Dashboard() {
           hive_id: id,
           temperature: jitter(34, 1.2),
           humidity: jitter(62, 5),
-          weight: 35 + Math.random() * 5,
+          weight: 30 + Math.random() * 8,
           sound: jitter(43, 3),
         });
       }
@@ -150,9 +190,12 @@ export default function Dashboard() {
               Beekeeper portal
             </Badge>
           </div>
-          <div className="flex items-center gap-2">
+          <nav className="flex items-center gap-1">
             <Button asChild variant="ghost" size="sm">
               <Link to="/marketplace">Marketplace</Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/blockchain">Blockchain</Link>
             </Button>
             <Button
               variant={live ? "secondary" : "outline"}
@@ -170,98 +213,68 @@ export default function Dashboard() {
               <LogOut className="size-4" />
               Sign out
             </Button>
-          </div>
+          </nav>
         </div>
       </header>
 
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8">
-        {/* Header */}
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        {/* Header + quick actions */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm text-muted-foreground">
               Welcome back, {user?.name ?? BK.name}
             </p>
-            <h1 className="text-2xl font-bold tracking-tight">
-              Apiary overview
-            </h1>
+            <h1 className="text-2xl font-bold tracking-tight">Apiary overview</h1>
           </div>
-          <div className="flex gap-2">
-            {/* Add Hive */}
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="gap-2">
-                  <Plus className="size-4" />
-                  Add hive
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Register a hive</DialogTitle>
-                </DialogHeader>
-                <AddHiveForm />
-              </DialogContent>
-            </Dialog>
-            {/* Add Batch */}
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button className="gap-2">
-                  <Plus className="size-4" />
-                  Create batch
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Create honey batch</DialogTitle>
-                </DialogHeader>
-                <AddBatchForm />
-              </DialogContent>
-            </Dialog>
+          <div className="flex flex-wrap gap-2">
+            <AddHiveDialog />
+            <AddBatchDialog />
+            <Button asChild variant="outline" className="gap-2">
+              <Link to="/hives">
+                <Sprout className="size-4" />
+                View hives
+              </Link>
+            </Button>
+            <Button asChild variant="outline" className="gap-2">
+              <Link to="/generate-qr">
+                <QrCode className="size-4" />
+                Generate QR
+              </Link>
+            </Button>
           </div>
         </div>
 
         {/* Totals */}
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Card>
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-primary/12 text-primary">
-                <Hexagon className="size-5" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Hives</p>
-                <p className="text-xl font-bold">
-                  {dashboard?.totals.hive_count ?? "—"}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-primary/12 text-primary">
-                <Droplets className="size-5" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  Predicted yield (7d)
-                </p>
-                <p className="text-xl font-bold">
-                  {dashboard ? `${dashboard.totals.predicted_yield_kg} kg` : "—"}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-primary/12 text-primary">
-                <Bell className="size-5" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Needs attention</p>
-                <p className="text-xl font-bold">
-                  {dashboard?.totals.needs_attention ?? "—"}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <TotalsCard
+            icon={<Hexagon className="size-5" />}
+            label="Total hives"
+            value={String(dashboard?.totals.hive_count ?? "—")}
+          />
+          <TotalsCard
+            icon={<CheckCircle2 className="size-5" />}
+            label="Healthy hives"
+            value={String(dashboard?.totals.healthy_count ?? "—")}
+          />
+          <TotalsCard
+            icon={<AlertTriangle className="size-5" />}
+            label="Needs attention"
+            value={String(dashboard?.totals.needs_attention ?? "—")}
+          />
+          <TotalsCard
+            icon={<Droplets className="size-5" />}
+            label="Honey produced"
+            value={
+              dashboard ? `${dashboard.totals.total_produced_kg} kg` : "—"
+            }
+          />
+          <TotalsCard
+            icon={<TrendingUp className="size-5" />}
+            label="Predicted (7d)"
+            value={
+              dashboard ? `${dashboard.totals.predicted_yield_kg} kg` : "—"
+            }
+          />
         </div>
 
         {/* Alerts */}
@@ -269,8 +282,11 @@ export default function Dashboard() {
           <Card className="border-yellow-500/30 bg-yellow-500/5">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm">
-                <AlertTriangle className="size-4 text-yellow-600" />
-                Active alerts
+                <Bell className="size-4 text-yellow-600" />
+                Recent alerts
+                <span className="text-[10px] font-normal text-muted-foreground">
+                  (Demo IoT Data · AI Prototype Analysis)
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-1.5">
@@ -284,7 +300,7 @@ export default function Dashboard() {
                     variant={a.severity === "critical" ? "destructive" : "secondary"}
                     className="text-[10px]"
                   >
-                    {a.severity}
+                    {a.severity === "critical" ? "🔴 Critical" : "🟡 Warning"}
                   </Badge>
                 </div>
               ))}
@@ -292,7 +308,116 @@ export default function Dashboard() {
           </Card>
         )}
 
-        {/* Hive cards */}
+        {/* Analytics (Module 9): health distribution + predicted vs actual */}
+        {analytics && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <PieChartIcon className="size-4 text-primary" />
+                  Hive health distribution
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-44">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[
+                          {
+                            name: "Healthy",
+                            value: analytics.healthCounts.healthy,
+                          },
+                          {
+                            name: "Warning",
+                            value: analytics.healthCounts.warning,
+                          },
+                          {
+                            name: "Critical",
+                            value: analytics.healthCounts.disease_risk,
+                          },
+                        ]}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={40}
+                        outerRadius={65}
+                        paddingAngle={3}
+                      >
+                        <Cell fill="var(--chart-1)" />
+                        <Cell fill="var(--chart-4)" />
+                        <Cell fill="var(--destructive)" />
+                      </Pie>
+                      <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                      <Tooltip
+                        contentStyle={{
+                          background: "var(--card)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          fontSize: 12,
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <TrendingUp className="size-4 text-primary" />
+                  Predicted vs actual production (kg)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-44">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={analytics.production}
+                      margin={{ top: 4, right: 8, bottom: 0, left: -22 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis
+                        dataKey="hive_id"
+                        tick={{ fontSize: 10 }}
+                        stroke="var(--muted-foreground)"
+                      />
+                      <YAxis
+                        tick={{ fontSize: 10 }}
+                        stroke="var(--muted-foreground)"
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          background: "var(--card)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          fontSize: 12,
+                        }}
+                      />
+                      <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                      <Bar
+                        dataKey="predicted"
+                        name="AI predicted (7d)"
+                        fill="var(--chart-3)"
+                        radius={[3, 3, 0, 0]}
+                      />
+                      <Bar
+                        dataKey="actual"
+                        name="Actual harvested"
+                        fill="var(--chart-1)"
+                        radius={[3, 3, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <p className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                  AI Prototype Analysis · Demo IoT Data
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Hive cards with live readings + AI panel */}
         {dashboard === undefined ? (
           <Card>
             <CardContent className="flex items-center justify-center py-16 text-sm text-muted-foreground">
@@ -311,12 +436,17 @@ export default function Dashboard() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, delay: i * 0.05 }}
                 >
-                  <Card>
+                  <Card className="h-full">
                     <CardHeader className="pb-3">
                       <div className="flex items-center justify-between">
                         <CardTitle className="flex items-center gap-2 text-base">
                           <Sprout className="size-4 text-primary" />
-                          {hive.hive_id}
+                          <Link
+                            to={`/hives/${hive.hive_id}`}
+                            className="hover:underline"
+                          >
+                            {hive.hive_id}
+                          </Link>
                         </CardTitle>
                         <span
                           className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.cls}`}
@@ -325,8 +455,7 @@ export default function Dashboard() {
                           {meta.label}
                         </span>
                       </div>
-                      <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Gauge className="size-3" />
+                      <p className="text-xs text-muted-foreground">
                         {hive.location}
                       </p>
                     </CardHeader>
@@ -362,29 +491,31 @@ export default function Dashboard() {
                         />
                       </div>
 
-                      {/* AI verdict */}
+                      {/* AI SMART ANALYTICS panel */}
                       {p && (
                         <div
-                          className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 ${
+                          className={`rounded-lg border px-3 py-2.5 ${
                             p.health_status === "healthy"
                               ? "border-primary/25 bg-primary/5"
                               : "border-destructive/25 bg-destructive/5"
                           }`}
                         >
-                          {p.health_status === "healthy" ? (
-                            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
-                          ) : (
-                            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
-                          )}
-                          <div className="text-xs leading-5">
-                            <p className="font-semibold">
-                              AI: {p.health_status.replace("_", " ")} · risk {p.risk_level}
-                              · predicted yield {p.predicted_yield_kg} kg / 7d
-                            </p>
-                            <p className="text-muted-foreground">
-                              {p.recommended_action}
-                            </p>
+                          <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs font-semibold">
+                            <span>
+                              Colony: {p.health_status.replace("_", " ")}
+                            </span>
+                            {p.disease_risk_pct !== null && (
+                              <span>Disease risk: {p.disease_risk_pct}%</span>
+                            )}
+                            <span>Yield: {p.predicted_yield_kg} kg/7d</span>
+                            {p.env_risk && <span>Env: {p.env_risk}</span>}
                           </div>
+                          <p className="text-xs leading-5 text-muted-foreground">
+                            {p.recommended_action}
+                          </p>
+                          <p className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                            AI Prototype Analysis · Demo IoT Data
+                          </p>
                         </div>
                       )}
                     </CardContent>
@@ -394,156 +525,257 @@ export default function Dashboard() {
             })}
           </div>
         )}
+
+        {/* Recent batches */}
+        {dashboard && dashboard.recentBatches.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Package className="size-4 text-primary" />
+                Recent honey batches
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-1.5">
+              {dashboard.recentBatches.map((b) => (
+                <div
+                  key={b.batch_id}
+                  className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="font-mono text-sm font-medium">{b.batch_id}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {b.hive_id} · {b.quantity_kg} kg {b.floral_source} ·{" "}
+                      {b.harvest_date}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-[10px] capitalize">
+                      {b.status}
+                    </Badge>
+                    <Button asChild variant="ghost" size="sm" className="gap-1.5">
+                      <Link to={`/batches?batch=${b.batch_id}`}>
+                        <Link2 className="size-3.5" />
+                        Trace
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              <Button asChild variant="outline" size="sm" className="mt-1 gap-2 self-start">
+                <Link to="/batches">
+                  <FlaskConical className="size-4" />
+                  Manage all batches
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </main>
   );
 }
 
-/** Add Hive form (Module 2). */
-function AddHiveForm() {
+/** Add Hive dialog (Module 2). */
+function AddHiveDialog() {
   const createHive = useMutation(api.apiary.createHive);
+  const [open, setOpen] = useState(false);
   const [hiveId, setHiveId] = useState("");
   const [location, setLocation] = useState("");
+  const [strength, setStrength] = useState("medium");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <form
-      className="flex flex-col gap-3"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        setBusy(true);
-        setError(null);
-        try {
-          await createHive({
-            hive_id: hiveId.trim().toUpperCase(),
-            location,
-            beekeeper_id: BK.id,
-            beekeeper_name: BK.name,
-          });
-          setHiveId("");
-          setLocation("");
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Failed to create hive.");
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="hive-id">Hive ID</Label>
-        <Input
-          id="hive-id"
-          value={hiveId}
-          onChange={(e) => setHiveId(e.target.value)}
-          placeholder="HIVE-007"
-          className="font-mono uppercase"
-          required
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="hive-loc">Location</Label>
-        <Input
-          id="hive-loc"
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          placeholder="e.g. Madurai, Tamil Nadu"
-          required
-        />
-      </div>
-      {error && <p className="text-xs text-destructive">{error}</p>}
-      <Button type="submit" disabled={busy} className="gap-2">
-        {busy ? "Registering…" : "Register hive"}
-      </Button>
-    </form>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button className="gap-2">
+          <Plus className="size-4" />
+          Add hive
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Register a hive</DialogTitle>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            setError(null);
+            try {
+              await createHive({
+                hive_id: hiveId.trim().toUpperCase(),
+                location,
+                beekeeper_id: BK.id,
+                beekeeper_name: BK.name,
+                hive_age_days: 0,
+                colony_strength: strength,
+              });
+              setOpen(false);
+              setHiveId("");
+              setLocation("");
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Failed to create hive.");
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="hive-id">Hive ID</Label>
+            <Input
+              id="hive-id"
+              value={hiveId}
+              onChange={(e) => setHiveId(e.target.value)}
+              placeholder="HIVE-007"
+              className="font-mono uppercase"
+              required
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="hive-loc">Location</Label>
+            <Input
+              id="hive-loc"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="e.g. Madurai, Tamil Nadu"
+              required
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="hive-strength">Colony strength</Label>
+            <select
+              id="hive-strength"
+              value={strength}
+              onChange={(e) => setStrength(e.target.value)}
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+            >
+              <option value="strong">Strong</option>
+              <option value="medium">Medium</option>
+              <option value="weak">Weak</option>
+            </select>
+          </div>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          <Button type="submit" disabled={busy}>
+            {busy ? "Registering…" : "Register hive"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-/** Add Batch form (Module 1) → seals to ledger → returns QR link. */
-function AddBatchForm() {
+/** Add Batch dialog (Module 4) → creates + seals → navigates to batches. */
+function AddBatchDialog() {
   const createBatch = useMutation(api.traceability.createBatch);
   const navigate = useNavigate();
   const dashboard = useQuery(api.apiary.getDashboard, { beekeeper_id: BK.id });
+  const [open, setOpen] = useState(false);
   const [hiveId, setHiveId] = useState("");
   const [quantity, setQuantity] = useState("");
-  const [harvest, setHarvest] = useState(
-    new Date().toISOString().slice(0, 10),
-  );
+  const [honeyType, setHoneyType] = useState("Wildflower");
+  const [harvest, setHarvest] = useState(new Date().toISOString().slice(0, 10));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <form
-      className="flex flex-col gap-3"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        setBusy(true);
-        setError(null);
-        try {
-          const res = await createBatch({
-            hive_id: hiveId.trim().toUpperCase(),
-            harvest_date: harvest,
-            processing_date: harvest, // v1: same-day processing/packaging
-            packaging_date: harvest,
-            quantity_kg: Number(quantity),
-            floral_source: "Wildflower",
-            beekeeper_id: BK.id,
-            beekeeper_name: BK.name,
-          });
-          navigate(`/generate-qr?batch=${res.batch_id}`);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : "Failed to create batch.");
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="batch-hive">Hive</Label>
-        <select
-          id="batch-hive"
-          value={hiveId}
-          onChange={(e) => setHiveId(e.target.value)}
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs"
-          required
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="gap-2">
+          <Plus className="size-4" />
+          Add honey batch
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create honey batch</DialogTitle>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            setError(null);
+            try {
+              const res = await createBatch({
+                hive_id: hiveId.trim().toUpperCase(),
+                harvest_date: harvest,
+                harvest_location:
+                  dashboard?.hives.find(
+                    (h) => h.hive_id === hiveId.trim().toUpperCase(),
+                  )?.location ?? undefined,
+                quantity_kg: Number(quantity),
+                floral_source: honeyType,
+                beekeeper_id: BK.id,
+                beekeeper_name: BK.name,
+              });
+              setOpen(false);
+              navigate(`/batches?created=${res.batch_id}`);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Failed to create batch.");
+            } finally {
+              setBusy(false);
+            }
+          }}
         >
-          <option value="">Select hive…</option>
-          {(dashboard?.hives ?? []).map((h) => (
-            <option key={h.hive_id} value={h.hive_id}>
-              {h.hive_id} — {h.location}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="batch-qty">Quantity (kg)</Label>
-          <Input
-            id="batch-qty"
-            type="number"
-            step="0.1"
-            min="0.1"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            placeholder="12.5"
-            required
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="batch-date">Harvest date</Label>
-          <Input
-            id="batch-date"
-            type="date"
-            value={harvest}
-            onChange={(e) => setHarvest(e.target.value)}
-            required
-          />
-        </div>
-      </div>
-      {error && <p className="text-xs text-destructive">{error}</p>}
-      <Button type="submit" disabled={busy} className="gap-2">
-        {busy ? "Sealing to ledger…" : "Create & seal batch"}
-      </Button>
-    </form>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="b-hive">Hive</Label>
+            <select
+              id="b-hive"
+              value={hiveId}
+              onChange={(e) => setHiveId(e.target.value)}
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+              required
+            >
+              <option value="">Select hive…</option>
+              {(dashboard?.hives ?? []).map((h) => (
+                <option key={h.hive_id} value={h.hive_id}>
+                  {h.hive_id} — {h.location}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="b-qty">Quantity (kg)</Label>
+              <Input
+                id="b-qty"
+                type="number"
+                step="0.1"
+                min="0.1"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                placeholder="12.5"
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="b-date">Harvest date</Label>
+              <Input
+                id="b-date"
+                type="date"
+                value={harvest}
+                onChange={(e) => setHarvest(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="b-type">Honey type</Label>
+            <Input
+              id="b-type"
+              value={honeyType}
+              onChange={(e) => setHoneyType(e.target.value)}
+              placeholder="Wildflower"
+            />
+          </div>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          <Button type="submit" disabled={busy}>
+            {busy ? "Sealing to ledger…" : "Create batch"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

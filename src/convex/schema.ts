@@ -41,16 +41,21 @@ const schema = defineSchema(
     hives: defineTable({
       hive_id: v.string(), // public id, e.g. "HIVE-014"
       beekeeper_id: v.string(),
+      beekeeper_name: v.optional(v.string()),
       location: v.string(),
+      hive_age_days: v.optional(v.number()),
+      colony_strength: v.optional(v.string()), // strong | medium | weak
       status: v.string(), // healthy | warning | disease_risk
       installed_at: v.number(),
     }).index("by_hive_id", ["hive_id"]),
 
     /** Hash-chained append-only ledger (SIMULATED blockchain — see ledger.ts).
-     *  Real-chain swap point: replace appendBlock with an Ethers/Hardhat tx. */
+     *  Real-chain swap point: replace appendBlock with an Ethers/Hardhat tx.
+     *  `stage` is descriptive metadata (not hashed) naming the lifecycle event. */
     ledger: defineTable({
       block_number: v.number(),
       batch_id: v.string(),
+      stage: v.optional(v.string()), // batch_created | harvested | processed | packaged | distributed
       tx_hash: v.string(), // sha256(block payload) — doubles as the record id
       prev_hash: v.string(),
       payload_json: v.string(), // exact hashed content, kept public for verify
@@ -67,15 +72,29 @@ const schema = defineSchema(
       beekeeper_id: v.string(),
       beekeeper_name: v.string(),
       harvest_date: v.string(), // YYYY-MM-DD
-      processing_date: v.string(),
-      packaging_date: v.string(),
+      harvest_location: v.optional(v.string()),
+      processing_date: v.optional(v.string()),
+      packaging_date: v.optional(v.string()),
+      distributed_date: v.optional(v.string()),
       quantity_kg: v.number(),
-      floral_source: v.string(),
-      status: v.string(), // verified | pending
+      floral_source: v.string(), // honey type
+      status: v.string(), // created | processed | packaged | distributed
       content_hash: v.string(),
       tx_hash: v.string(),
       block_number: v.number(),
       created_at: v.number(),
+    }).index("by_batch_id", ["batch_id"]),
+
+    /** Lifecycle stage records for a batch (Module 4/6 traceability timeline).
+     *  Each row pairs with a ledger block — the tamper-evident audit trail. */
+    traceability_records: defineTable({
+      batch_id: v.string(),
+      stage: v.string(), // created | harvested | processed | packaged | distributed
+      actor: v.string(),
+      note: v.optional(v.string()),
+      block_number: v.number(),
+      tx_hash: v.string(),
+      recorded_at: v.number(),
     }).index("by_batch_id", ["batch_id"]),
 
     /** Alerts feed for the future beekeeper dashboard (Module 2). */
@@ -93,6 +112,8 @@ const schema = defineSchema(
       recommended_action: v.string(),
       predicted_yield_kg: v.number(),
       risk_level: v.string(),
+      disease_risk_pct: v.optional(v.number()), // 0-100 (AI Prototype Analysis)
+      env_risk: v.optional(v.string()), // low | medium | high
       timestamp: v.number(),
     }).index("by_hive_id", ["hive_id"]),
 

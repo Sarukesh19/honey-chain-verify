@@ -2,13 +2,22 @@
 
 Prototype digital ecosystem for **KVIC's Honey Mission**: honey batches sealed on a tamper-evident ledger, verifiable by any customer with one QR scan.
 
-## Version 1 scope (what is built)
+## What is built (full prototype)
 
-Per the project brief, v1 nails **one flow**:
+All four modules are implemented. The headline flow:
 
 > **Customer scans a jar QR → public verification page proves the batch is authentic and untampered.**
 
-The home screen (`/`) is a **scan-a-QR box**. Everything else (full beekeeper IoT dashboard UI, marketplace) is intentionally out of v1 scope, though its data layer is already seeded and stored.
+| Module | Where | Highlights |
+| --- | --- | --- |
+| 1 · Honey Traceability | `/batches`, `/generate-qr`, `/verify/{id}` | Batch creation → ledger seal → QR → public verify |
+| 2 · Smart Beekeeping | `/dashboard`, `/hives`, `/hives/{id}` | Live IoT readings (5 s cadence), hive details, per-metric charts |
+| 3 · AI Smart Analytics | Dashboard + hive detail panels | Health status, disease-risk %, yield prediction, environmental risk, recommended action — labeled "AI Prototype Analysis" |
+| 4 · Market Linkage | `/marketplace` | Verified-batch listings linking to traceability |
+| 6 · Blockchain Traceability | `/blockchain` | Visual per-batch block timeline with tx/prev/content hashes — labeled "Prototype Blockchain Record" |
+| 8 · Alert System | Dashboard alerts card | High temp / high humidity / weight drop / abnormal sound / disease risk, with Warning vs Critical severity |
+| 9 · Analytics | Dashboard + hive details | Temperature/humidity/weight/sound time series, health donut, predicted-vs-actual bars |
+| 10 · User Roles | In-app | Beekeeper (manage), Processor/Admin (`recordStage` mutations on `/batches`), Consumer (public `/verify`) |
 
 ### The v1 flow, end to end
 
@@ -33,7 +42,11 @@ Key routes:
 | `/verify/{batch_id}` | **Public** verification page — no login required |
 | `/generate-qr` | Jar label QR generator (encodes the verify URL, downloadable PNG) |
 | `/marketplace` | Verified-batch marketplace (Module 4) |
-| `/dashboard` | Beekeeper portal: live hives, IoT readings, AI verdicts, alerts, Add Hive / Create Batch (protected with `RequireAuth`) |
+| `/dashboard` | Beekeeper portal: totals, quick actions, live hives, AI panels, analytics charts, alerts, recent batches (protected) |
+| `/hives` | Hive management list (Module 2) |
+| `/hives/{hive_id}` | Hive details: sensor time-series charts + AI Smart Analytics |
+| `/batches` | Batch management: create, processor stage recording, traceability timeline, QR + blockchain links |
+| `/blockchain` | Per-batch visual block timeline (Module 6) |
 
 ## Blockchain design: hash-chain simulation (explicit)
 
@@ -77,9 +90,15 @@ All three pass ⇒ **"Blockchain Verified ✓"**. Any failure names the specific
 | `traceability.getBatchPayload` | query | ledger payload lookup |
 | `traceability.listBatchIds` | query | marketplace/demo listing |
 | `apiary.getDashboard` | query | `GET /hives/{id}` (aggregate) |
+| `apiary.getHiveDetails` | query | `GET /hives/{id}` (readings + AI) |
+| `apiary.getAnalytics` | query | analytics series + health/production charts |
 | `apiary.createHive` | mutation | `POST /hives` |
-| `apiary.pushSimulatedReading` | mutation | `POST /sensor-data` (ingestion) |
+| `apiary.pushSimulatedReading` | mutation | `POST /sensor-data` (ingestion + alert rules) |
 | `apiary.getAlerts` | query | `GET /alerts` |
+| `apiary.resetDemo` | mutation | demo reset (prototype only) |
+| `traceability.recordStage` | mutation | processor/admin stage recording (→ new ledger block) |
+| `traceability.getBatchTimeline` / `getBatchBlocks` | query | traceability + blockchain views |
+| `traceability.listAllBatches` | query | batch management listing |
 | `apiary.listVerifiedBatches` | query | marketplace listing |
 | `demo.seedDemoData` | mutation | seed/demo script |
 | `demo.classifyHealth` / `demo.predictYield7d` | exported rules | `GET /hives/{id}/prediction` (server logic) |
@@ -90,9 +109,19 @@ All three pass ⇒ **"Blockchain Verified ✓"**. Any failure names the specific
 - **AI Prediction (Module 3)** — `classifyHealth` / `predictYield7d` rules run on every simulated reading; the same signatures accept a trained scikit-learn model later.
 - **Market Linkage (Module 4)** — `/marketplace` lists ledger-verified batches, each linking to its public verification page.
 
-## Roadmap beyond v1
+## Demo reset
 
-- **v1.3** — Real chain adapter + IoT device auth + KVIC multi-tenant clusters.
+```bash
+bun convex run apiary:resetDemo '{}' && bun convex run demo:seedDemoData '{}'
+```
+
+Re-seeds 3 hives (one per AI outcome), 24 h of Demo IoT Data, AI analyses with disease-risk %, and one batch with a complete 5-block lifecycle timeline.
+
+## Roadmap beyond the prototype
+
+- Real chain adapter (permissioned network) + IoT device auth + KVIC multi-tenant clusters.
+- Trained scikit-learn models replacing the explainable rules behind `classifyHealth` / `predictYield7d` (same signatures).
+- Real processor/admin login roles via Convex Auth (role checks already isolated to mutation entry points).
 
 ---
 

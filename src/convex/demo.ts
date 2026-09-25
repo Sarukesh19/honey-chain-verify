@@ -21,7 +21,7 @@
 
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
-import { appendBatchBlock } from "./ledger";
+import { appendBatchBlock, appendStageBlock } from "./ledger";
 
 // ---- Deterministic pseudo-random (seeded) so demo data is reproducible ----
 function makeRng(seed: number) {
@@ -40,6 +40,8 @@ interface HiveProfile {
   base_weight: number;
   daily_gain_kg: number;
   sound_base: number;
+  age_days: number;
+  colony_strength: "strong" | "medium" | "weak";
 }
 
 // ---- AI layer (explainable rules ≈ trained model behavior) -----------------
@@ -143,6 +145,8 @@ export const seedDemoData = mutation({
         base_weight: 38,
         daily_gain_kg: 1.1,
         sound_base: 42,
+        age_days: 420,
+        colony_strength: "strong",
       },
       {
         hive_id: "HIVE-032",
@@ -152,6 +156,8 @@ export const seedDemoData = mutation({
         base_weight: 29.5,
         daily_gain_kg: 0.4,
         sound_base: 45,
+        age_days: 260,
+        colony_strength: "medium",
       },
       {
         hive_id: "HIVE-003",
@@ -161,6 +167,8 @@ export const seedDemoData = mutation({
         base_weight: 26,
         daily_gain_kg: 0.9,
         sound_base: 54,
+        age_days: 150,
+        colony_strength: "weak",
       },
     ];
 
@@ -168,9 +176,12 @@ export const seedDemoData = mutation({
       await ctx.db.insert("hives", {
         hive_id: p.hive_id,
         beekeeper_id,
+        beekeeper_name,
         location: p.location,
+        hive_age_days: p.age_days,
+        colony_strength: p.colony_strength,
         status: "healthy",
-        installed_at: now - 90 * 24 * 3600 * 1000,
+        installed_at: now - p.age_days * 24 * 3600 * 1000,
       });
     }
 
@@ -206,10 +217,24 @@ export const seedDemoData = mutation({
           latest.weight,
           latest.temperature,
           latest.humidity,
-          0.8,
+          p.colony_strength === "strong" ? 0.9 : p.colony_strength === "medium" ? 0.65 : 0.4,
           14,
         ),
         risk_level: health.risk,
+        // AI Prototype Analysis: risk % derived from how far signals sit from
+        // healthy bands (documented heuristic — swap for a trained model).
+        disease_risk_pct:
+          health.status === "disease_risk"
+            ? 78 + Math.round(rng() * 15)
+            : health.status === "warning"
+              ? 25 + Math.round(rng() * 20)
+              : Math.round(rng() * 12),
+        env_risk:
+          latest.humidity > 72 || latest.temperature > 37 || latest.temperature < 31
+            ? "high"
+            : latest.humidity > 68
+              ? "medium"
+              : "low",
         timestamp: now,
       });
 
@@ -227,15 +252,15 @@ export const seedDemoData = mutation({
       }
     }
 
-    // 4) One honey batch, sealed on the hash-chained ledger (Module 1)
-    const block = await appendBatchBlock(ctx, {
+    // 4) One honey batch with a FULL lifecycle timeline, each stage sealed as
+    // its own ledger block (batch_created → harvested → processed → packaged
+    // → distributed) — the complete blockchain-traceability demo story.
+    const created = await appendBatchBlock(ctx, {
       batch_id: "HC-2026-0001",
       hive_id: "HIVE-014",
       beekeeper_id,
       beekeeper_name,
       harvest_date: "2026-09-18",
-      processing_date: "2026-09-19",
-      packaging_date: "2026-09-20",
       quantity_kg: 12.5,
       floral_source: "Wildflower (Karvi bloom)",
       recorded_at: now,
@@ -246,20 +271,74 @@ export const seedDemoData = mutation({
       beekeeper_id,
       beekeeper_name,
       harvest_date: "2026-09-18",
+      harvest_location: "Western Ghats Apiary, Satara, MH",
       processing_date: "2026-09-19",
       packaging_date: "2026-09-20",
+      distributed_date: "2026-09-22",
       quantity_kg: 12.5,
       floral_source: "Wildflower (Karvi bloom)",
-      status: "verified",
-      content_hash: block.content_hash,
-      tx_hash: block.tx_hash,
-      block_number: block.block_number,
+      status: "distributed",
+      content_hash: created.content_hash,
+      tx_hash: created.tx_hash,
+      block_number: created.block_number,
       created_at: now,
     });
+    await ctx.db.insert("traceability_records", {
+      batch_id: "HC-2026-0001",
+      stage: "created",
+      actor: beekeeper_name,
+      note: "Batch created from HIVE-014 — 12.5 kg Wildflower (Karvi bloom)",
+      block_number: created.block_number,
+      tx_hash: created.tx_hash,
+      recorded_at: now,
+    });
+
+    // Stage blocks 2-4: processed → packaged → distributed (chain-linked).
+    const stageDefs = [
+      {
+        stage: "harvested" as const,
+        actor: beekeeper_name,
+        note: "Harvested 12.5 kg at Western Ghats Apiary",
+      },
+      {
+        stage: "processed" as const,
+        actor: "KVIC Processing Unit, Satara",
+        note: "Filtered and moisture-tested at KVIC unit",
+      },
+      {
+        stage: "packaged" as const,
+        actor: "KVIC Processing Unit, Satara",
+        note: "Bottled into 42 × 250g jars; QR labels applied",
+      },
+      {
+        stage: "distributed" as const,
+        actor: "KVIC Distribution, Pune",
+        note: "Shipped to Khadi Gramodyog Bhavan retailers",
+      },
+    ];
+    for (const s of stageDefs) {
+      const { block_number, tx_hash } = await appendStageBlock(ctx, {
+        batch_id: "HC-2026-0001",
+        stage: s.stage,
+        actor: s.actor,
+        note: s.note,
+        recorded_at: now,
+      });
+      await ctx.db.insert("traceability_records", {
+        batch_id: "HC-2026-0001",
+        stage: s.stage,
+        actor: s.actor,
+        note: s.note,
+        block_number,
+        tx_hash,
+        recorded_at: now,
+      });
+    }
 
     return {
       skipped: false as const,
-      message: "Seeded 3 hives, 24h sensor stream, AI predictions, 1 verified batch.",
+      message:
+        "Seeded 3 hives, 24h sensor stream, AI predictions, and 1 batch with a 5-block traceability timeline.",
       batch_id: "HC-2026-0001",
     };
   },

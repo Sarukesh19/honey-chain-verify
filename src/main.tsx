@@ -16,6 +16,10 @@ const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
 const VerifyPage = lazy(() => import("./pages/Verify.tsx"));
 const GenerateQrPage = lazy(() => import("./pages/GenerateQr.tsx"));
 const Marketplace = lazy(() => import("./pages/Marketplace.tsx"));
+const Hives = lazy(() => import("./pages/Hives.tsx"));
+const HiveDetails = lazy(() => import("./pages/HiveDetails.tsx"));
+const Batches = lazy(() => import("./pages/Batches.tsx"));
+const Blockchain = lazy(() => import("./pages/Blockchain.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 // Simple loading fallback for route transitions
@@ -127,6 +131,38 @@ createRoot(document.getElementById("root")!).render(
               <Route path="/verify/:batchId" element={<VerifyPage />} />
               <Route path="/generate-qr" element={<GenerateQrPage />} />
               <Route path="/marketplace" element={<Marketplace />} />
+              <Route
+                path="/hives"
+                element={
+                  <RequireAuth>
+                    <Hives />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/hives/:hiveId"
+                element={
+                  <RequireAuth>
+                    <HiveDetails />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/batches"
+                element={
+                  <RequireAuth>
+                    <Batches />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/blockchain"
+                element={
+                  <RequireAuth>
+                    <Blockchain />
+                  </RequireAuth>
+                }
+              />
               <Route
                 path="/auth"
                 element={<AuthPage redirectAfterAuth="/dashboard" />}

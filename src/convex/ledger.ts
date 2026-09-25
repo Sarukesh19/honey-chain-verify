@@ -36,11 +36,20 @@ export interface BatchMetadataPayload {
   beekeeper_id: string;
   beekeeper_name: string;
   harvest_date: string; // YYYY-MM-DD
-  processing_date: string;
-  packaging_date: string;
+  processing_date?: string;
+  packaging_date?: string;
   quantity_kg: number;
   floral_source: string;
   recorded_at: number; // epoch ms — committed to the hash
+}
+
+/** Payload for a lifecycle-stage block (harvested/processed/packaged/…). */
+export interface StagePayload {
+  batch_id: string;
+  stage: string; // harvested | processed | packaged | distributed
+  actor: string;
+  note?: string;
+  recorded_at: number;
 }
 
 export interface LedgerBlock {
@@ -120,6 +129,41 @@ export async function buildBlock(
     ),
     created_at: createdAt,
   };
+}
+
+/**
+ * Append a lifecycle-stage block (harvested → processed → packaged → …).
+ * Same chain, same guarantees — the payload just describes a stage event.
+ */
+export async function appendStageBlock(
+  ctx: MutationCtx,
+  payload: StagePayload,
+): Promise<{ block_number: number; tx_hash: string }> {
+  const [head] = await ctx.db
+    .query("ledger")
+    .withIndex("by_block_number", (q) => q.gte("block_number", 0))
+    .order("desc")
+    .take(1);
+  const blockNumber = head ? head.block_number + 1 : 0;
+  const prevHash = head ? head.tx_hash : GENESIS_HASH;
+  const content_hash = await contentHash(payload as unknown as BatchMetadataPayload);
+  const created_at = Date.now();
+  const tx_hash = await sha256Hex(
+    canonicalJson(
+      blockEnvelope(payload as unknown as BatchMetadataPayload, blockNumber, prevHash, content_hash, created_at),
+    ),
+  );
+  await ctx.db.insert("ledger", {
+    block_number: blockNumber,
+    batch_id: payload.batch_id,
+    stage: payload.stage,
+    tx_hash,
+    prev_hash: prevHash,
+    payload_json: canonicalJson(payload),
+    content_hash,
+    created_at,
+  });
+  return { block_number: blockNumber, tx_hash };
 }
 
 /**
