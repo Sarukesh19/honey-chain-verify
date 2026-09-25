@@ -171,6 +171,14 @@ export default function Landing() {
                       </Link>
                       <span className="text-border">|</span>
                       <Link
+                        to="/marketplace"
+                        className="inline-flex items-center gap-1.5 font-medium text-primary underline-offset-2 hover:underline"
+                      >
+                        <BadgeCheck className="size-3.5" />
+                        Marketplace
+                      </Link>
+                      <span className="text-border">|</span>
+                      <Link
                         to="/dashboard"
                         className="inline-flex items-center gap-1.5 font-medium text-primary underline-offset-2 hover:underline"
                       >

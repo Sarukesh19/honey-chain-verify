@@ -2,7 +2,7 @@ import { useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import { ArrowLeft, Download, Hexagon, QrCode, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import QRCode from "qrcode";
 
 import { api } from "@/convex/_generated/api";
@@ -24,7 +24,8 @@ import { Input } from "@/components/ui/input";
  */
 export default function GenerateQrPage() {
   const batchIds = useQuery(api.traceability.listBatchIds, {});
-  const [batchId, setBatchId] = useState("");
+  const [params] = useSearchParams();
+  const [batchId, setBatchId] = useState(params.get("batch") ?? "");
   const [dataUrl, setDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 

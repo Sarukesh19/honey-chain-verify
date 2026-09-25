@@ -15,6 +15,7 @@ const AuthPage = lazy(() => import("./pages/Auth.tsx"));
 const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
 const VerifyPage = lazy(() => import("./pages/Verify.tsx"));
 const GenerateQrPage = lazy(() => import("./pages/GenerateQr.tsx"));
+const Marketplace = lazy(() => import("./pages/Marketplace.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 // Simple loading fallback for route transitions
@@ -125,6 +126,7 @@ createRoot(document.getElementById("root")!).render(
               {/* Public customer flow — opened by scanning a jar QR (no auth) */}
               <Route path="/verify/:batchId" element={<VerifyPage />} />
               <Route path="/generate-qr" element={<GenerateQrPage />} />
+              <Route path="/marketplace" element={<Marketplace />} />
               <Route
                 path="/auth"
                 element={<AuthPage redirectAfterAuth="/dashboard" />}

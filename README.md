@@ -32,7 +32,8 @@ Key routes:
 | `/` | Scan-a-QR box (home screen) + live demo batch shortcuts |
 | `/verify/{batch_id}` | **Public** verification page — no login required |
 | `/generate-qr` | Jar label QR generator (encodes the verify URL, downloadable PNG) |
-| `/dashboard` | Beekeeper portal (protected with `RequireAuth`) |
+| `/marketplace` | Verified-batch marketplace (Module 4) |
+| `/dashboard` | Beekeeper portal: live hives, IoT readings, AI verdicts, alerts, Add Hive / Create Batch (protected with `RequireAuth`) |
 
 ## Blockchain design: hash-chain simulation (explicit)
 
@@ -75,13 +76,22 @@ All three pass ⇒ **"Blockchain Verified ✓"**. Any failure names the specific
 | `traceability.getBatchForVerification` | query (public) | `GET /verify/{batch_id}` |
 | `traceability.getBatchPayload` | query | ledger payload lookup |
 | `traceability.listBatchIds` | query | marketplace/demo listing |
+| `apiary.getDashboard` | query | `GET /hives/{id}` (aggregate) |
+| `apiary.createHive` | mutation | `POST /hives` |
+| `apiary.pushSimulatedReading` | mutation | `POST /sensor-data` (ingestion) |
+| `apiary.getAlerts` | query | `GET /alerts` |
+| `apiary.listVerifiedBatches` | query | marketplace listing |
 | `demo.seedDemoData` | mutation | seed/demo script |
 | `demo.classifyHealth` / `demo.predictYield7d` | exported rules | `GET /hives/{id}/prediction` (server logic) |
 
+## Modules 2–4 (also implemented)
+
+- **Smart Beekeeping (Module 2)** — `/dashboard` shows per-hive live readings (temp/humidity/weight/sound) with an **IoT live toggle** that pushes a new simulated reading every 5 s (`apiary.pushSimulatedReading`), re-runs the AI rules server-side, updates hive status, and raises alerts. Add Hive and Create Batch dialogs complete the flow.
+- **AI Prediction (Module 3)** — `classifyHealth` / `predictYield7d` rules run on every simulated reading; the same signatures accept a trained scikit-learn model later.
+- **Market Linkage (Module 4)** — `/marketplace` lists ledger-verified batches, each linking to its public verification page.
+
 ## Roadmap beyond v1
 
-- **v1.1** — Beekeeper dashboard UI over the already-seeded `sensor_data` / `alerts` / `ai_predictions` tables (live readings, hive status, yield forecast).
-- **v1.2** — Marketplace listing of verified batches → verification pages ("verified product → market trust").
 - **v1.3** — Real chain adapter + IoT device auth + KVIC multi-tenant clusters.
 
 ---
