@@ -37,14 +37,14 @@ import {
   YAxis,
 } from "recharts";
 
+import { AddHiveDialog, BeekeeperSwitcher, DeleteHiveDialog, EditHiveDialog } from "@/components/hiveDialogs";
 import { RoleSwitcher } from "@/components/RoleSwitcher";
 import {
-  CURRENT_BEEKEEPER,
   useAlerts,
   useAnalytics,
   useCreateBatch,
-  useCreateHive,
   useDashboard,
+  useDemoProfile,
   useSimulatedSensorStream,
 } from "@/lib/dataLayer";
 import { Badge } from "@/components/ui/badge";
@@ -65,8 +65,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/use-auth";
-
-const BK = CURRENT_BEEKEEPER;
 
 const statusMeta: Record<
   string,
@@ -148,8 +146,9 @@ function TotalsCard({
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
+  const { profile } = useDemoProfile();
   const navigate = useNavigate();
-  const dashboard = useDashboard(BK.id);
+  const dashboard = useDashboard(profile.id);
   const alerts = useAlerts();
   const analytics = useAnalytics();
   const pushReading = useSimulatedSensorStream();
@@ -192,8 +191,9 @@ export default function Dashboard() {
               Beekeeper portal
             </Badge>
           </div>
-          <div className="hidden sm:block">
+          <div className="hidden sm:flex items-center gap-2">
             <RoleSwitcher current="beekeeper" />
+            <BeekeeperSwitcher />
           </div>
           <nav className="flex items-center gap-1">
             <Button asChild variant="ghost" size="sm">
@@ -230,7 +230,7 @@ export default function Dashboard() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm text-muted-foreground">
-              Welcome back, {user?.name ?? BK.name}
+              Welcome back, {profile.name}
             </p>
             <h1 className="text-2xl font-bold tracking-tight">Apiary overview</h1>
           </div>
@@ -286,6 +286,22 @@ export default function Dashboard() {
         </div>
 
         {/* Alerts */}
+        {alerts && alerts.length === 0 && (
+          <Card>
+            <CardContent className="flex items-center gap-3 py-6">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-primary">
+                <Bell className="size-5" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">No alerts — all colonies calm</p>
+                <p className="text-xs text-muted-foreground">
+                  Simulated IoT readings stay within healthy bands; new alerts
+                  appear here the moment a rule triggers.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
         {alerts && alerts.length > 0 && (
           <Card className="border-yellow-500/30 bg-yellow-500/5">
             <CardHeader className="pb-2">
@@ -433,7 +449,31 @@ export default function Dashboard() {
           </Card>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
-            {dashboard.hives.map((hive, i) => {
+            {dashboard.hives.length === 0 ? (
+              <Card className="lg:col-span-2">
+                <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                  <div className="flex size-14 items-center justify-center rounded-full bg-primary/12">
+                    <Sprout className="size-7 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">No hives yet</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Add your first hive to start streaming simulated IoT data
+                      and AI health analysis.
+                    </p>
+                  </div>
+                  <AddHiveDialog
+                    trigger={
+                      <Button size="sm" className="gap-2">
+                        <Plus className="size-4" />
+                        Add your first hive
+                      </Button>
+                    }
+                  />
+                </CardContent>
+              </Card>
+            ) : (
+              dashboard.hives.map((hive, i) => {
               const meta = statusMeta[hive.status] ?? statusMeta.healthy;
               const p = hive.prediction;
               return (
@@ -455,12 +495,16 @@ export default function Dashboard() {
                             {hive.hive_id}
                           </Link>
                         </CardTitle>
-                        <span
-                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.cls}`}
-                        >
-                          <span className={`size-1.5 rounded-full ${meta.dot}`} />
-                          {meta.label}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <span
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.cls}`}
+                          >
+                            <span className={`size-1.5 rounded-full ${meta.dot}`} />
+                            {meta.label}
+                          </span>
+                          <EditHiveDialog hive={hive} />
+                          <DeleteHiveDialog hiveId={hive.hive_id} />
+                        </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {hive.location}
@@ -529,7 +573,8 @@ export default function Dashboard() {
                   </Card>
                 </motion.div>
               );
-            })}
+              })
+            )}
           </div>
         )}
 
@@ -582,102 +627,12 @@ export default function Dashboard() {
   );
 }
 
-/** Add Hive dialog (Module 2). */
-function AddHiveDialog() {
-  const createHive = useCreateHive();
-  const [open, setOpen] = useState(false);
-  const [hiveId, setHiveId] = useState("");
-  const [location, setLocation] = useState("");
-  const [strength, setStrength] = useState("medium");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button className="gap-2">
-          <Plus className="size-4" />
-          Add hive
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Register a hive</DialogTitle>
-        </DialogHeader>
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            setError(null);
-            try {
-              await createHive({
-                hive_id: hiveId.trim().toUpperCase(),
-                location,
-                beekeeper_id: BK.id,
-                beekeeper_name: BK.name,
-                hive_age_days: 0,
-                colony_strength: strength,
-              });
-              setOpen(false);
-              setHiveId("");
-              setLocation("");
-            } catch (err) {
-              setError(err instanceof Error ? err.message : "Failed to create hive.");
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="hive-id">Hive ID</Label>
-            <Input
-              id="hive-id"
-              value={hiveId}
-              onChange={(e) => setHiveId(e.target.value)}
-              placeholder="HIVE-007"
-              className="font-mono uppercase"
-              required
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="hive-loc">Location</Label>
-            <Input
-              id="hive-loc"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="e.g. Madurai, Tamil Nadu"
-              required
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="hive-strength">Colony strength</Label>
-            <select
-              id="hive-strength"
-              value={strength}
-              onChange={(e) => setStrength(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-            >
-              <option value="strong">Strong</option>
-              <option value="medium">Medium</option>
-              <option value="weak">Weak</option>
-            </select>
-          </div>
-          {error && <p className="text-xs text-destructive">{error}</p>}
-          <Button type="submit" disabled={busy}>
-            {busy ? "Registering…" : "Register hive"}
-          </Button>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 /** Add Batch dialog (Module 4) → creates + seals → navigates to batches. */
 function AddBatchDialog() {
   const createBatch = useCreateBatch();
+  const { profile } = useDemoProfile();
   const navigate = useNavigate();
-  const dashboard = useDashboard(BK.id);
+  const dashboard = useDashboard(profile.id);
   const [open, setOpen] = useState(false);
   const [hiveId, setHiveId] = useState("");
   const [quantity, setQuantity] = useState("");
@@ -714,8 +669,8 @@ function AddBatchDialog() {
                   )?.location ?? undefined,
                 quantity_kg: Number(quantity),
                 floral_source: honeyType,
-                beekeeper_id: BK.id,
-                beekeeper_name: BK.name,
+                beekeeper_id: profile.id,
+                beekeeper_name: profile.name,
               });
               setOpen(false);
               navigate(`/batches?created=${res.batch_id}`);

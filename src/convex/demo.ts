@@ -131,12 +131,13 @@ export const seedDemoData = mutation({
     const now = Date.now();
     const rng = makeRng(42);
 
-    // 1) Beekeeper (stand-in for an authenticated KVIC-registered user)
-    const beekeeper_id = "BK-001";
-    const beekeeper_name = "Ramesh Patil";
+    // 1) Beekeepers (stand-ins for authenticated KVIC-registered users).
+    //    TWO profiles so the demo role/user switcher changes name + data.
+    const bk1 = { id: "BK-001", name: "Ramesh Patil" };
+    const bk2 = { id: "BK-002", name: "Sunita Devi" };
 
     // 2) Hives — profiles chosen to demo all three AI outcomes
-    const hiveProfiles: HiveProfile[] = [
+    const hiveProfiles: Array<HiveProfile & { beekeeper: { id: string; name: string } }> = [
       {
         hive_id: "HIVE-014",
         location: "Western Ghats Apiary, Satara, MH",
@@ -147,6 +148,7 @@ export const seedDemoData = mutation({
         sound_base: 42,
         age_days: 420,
         colony_strength: "strong",
+        beekeeper: bk1,
       },
       {
         hive_id: "HIVE-032",
@@ -158,6 +160,7 @@ export const seedDemoData = mutation({
         sound_base: 45,
         age_days: 260,
         colony_strength: "medium",
+        beekeeper: bk1,
       },
       {
         hive_id: "HIVE-003",
@@ -169,14 +172,39 @@ export const seedDemoData = mutation({
         sound_base: 54,
         age_days: 150,
         colony_strength: "weak",
+        beekeeper: bk1,
+      },
+      {
+        hive_id: "HIVE-007",
+        location: "Sundarbans Cooperative, WB",
+        base_temp: 34.8,
+        base_humidity: 58,
+        base_weight: 41,
+        daily_gain_kg: 1.3,
+        sound_base: 41,
+        age_days: 510,
+        colony_strength: "strong",
+        beekeeper: bk2,
+      },
+      {
+        hive_id: "HIVE-021",
+        location: "Sundarbans Cooperative, WB",
+        base_temp: 34.2,
+        base_humidity: 63,
+        base_weight: 33,
+        daily_gain_kg: 0.8,
+        sound_base: 44,
+        age_days: 300,
+        colony_strength: "medium",
+        beekeeper: bk2,
       },
     ];
 
     for (const p of hiveProfiles) {
       await ctx.db.insert("hives", {
         hive_id: p.hive_id,
-        beekeeper_id,
-        beekeeper_name,
+        beekeeper_id: p.beekeeper.id,
+        beekeeper_name: p.beekeeper.name,
         location: p.location,
         hive_age_days: p.age_days,
         colony_strength: p.colony_strength,
@@ -252,94 +280,179 @@ export const seedDemoData = mutation({
       }
     }
 
-    // 4) One honey batch with a FULL lifecycle timeline, each stage sealed as
-    // its own ledger block (batch_created → harvested → processed → packaged
-    // → distributed) — the complete blockchain-traceability demo story.
-    const created = await appendBatchBlock(ctx, {
-      batch_id: "HC-2026-0001",
-      hive_id: "HIVE-014",
-      beekeeper_id,
-      beekeeper_name,
-      harvest_date: "2026-09-18",
-      quantity_kg: 12.5,
-      floral_source: "Wildflower (Karvi bloom)",
-      recorded_at: now,
-    });
-    await ctx.db.insert("honey_batches", {
-      batch_id: "HC-2026-0001",
-      hive_id: "HIVE-014",
-      beekeeper_id,
-      beekeeper_name,
-      harvest_date: "2026-09-18",
-      harvest_location: "Western Ghats Apiary, Satara, MH",
-      processing_date: "2026-09-19",
-      packaging_date: "2026-09-20",
-      distributed_date: "2026-09-22",
-      quantity_kg: 12.5,
-      floral_source: "Wildflower (Karvi bloom)",
-      status: "distributed",
-      content_hash: created.content_hash,
-      tx_hash: created.tx_hash,
-      block_number: created.block_number,
-      created_at: now,
-    });
-    await ctx.db.insert("traceability_records", {
-      batch_id: "HC-2026-0001",
-      stage: "created",
-      actor: beekeeper_name,
-      note: "Batch created from HIVE-014 — 12.5 kg Wildflower (Karvi bloom)",
-      block_number: created.block_number,
-      tx_hash: created.tx_hash,
-      recorded_at: now,
+    // 3b) A RESOLVED historical alert so the alert-history log shows the
+    //     system tracking issues over time, not just a live snapshot.
+    await ctx.db.insert("alerts", {
+      hive_id: "HIVE-032",
+      message: "Hive 032 humidity abnormally high — resolved after ventilation fix",
+      severity: "warning",
+      timestamp: now - 2 * 24 * 3600 * 1000,
+      resolved_at: now - 1.5 * 24 * 3600 * 1000,
     });
 
-    // Stage blocks 2-4: processed → packaged → distributed (chain-linked).
-    const stageDefs = [
+    // 4) Honey batches with realistic quantities so "Total honey produced"
+    // is non-zero and reflects ALL statuses (created counts as produced).
+    // BK-001: 12.5 + 8.0 + 6.2 = 26.7 kg   BK-002: 15.0 + 4.5 = 19.5 kg
+    interface BatchSeed {
+      batch_id: string;
+      hive_id: string;
+      beekeeper: { id: string; name: string };
+      harvest_date: string;
+      quantity_kg: number;
+      floral_source: string;
+      status: "created" | "processed" | "packaged" | "distributed";
+      dates: Partial<{
+        processing_date: string;
+        packaging_date: string;
+        distributed_date: string;
+      }>;
+      stageNotes: Array<{
+        stage: "harvested" | "processed" | "packaged" | "distributed";
+        actor: string;
+        note: string;
+      }>;
+    }
+
+    const batchSeeds: BatchSeed[] = [
       {
-        stage: "harvested" as const,
-        actor: beekeeper_name,
-        note: "Harvested 12.5 kg at Western Ghats Apiary",
+        batch_id: "HC-2026-0001",
+        hive_id: "HIVE-014",
+        beekeeper: bk1,
+        harvest_date: "2026-09-18",
+        quantity_kg: 12.5,
+        floral_source: "Wildflower (Karvi bloom)",
+        status: "distributed",
+        dates: {
+          processing_date: "2026-09-19",
+          packaging_date: "2026-09-20",
+          distributed_date: "2026-09-22",
+        },
+        stageNotes: [
+          { stage: "harvested", actor: bk1.name, note: "Harvested 12.5 kg at Western Ghats Apiary" },
+          { stage: "processed", actor: "KVIC Processing Unit, Satara", note: "Filtered and moisture-tested at KVIC unit" },
+          { stage: "packaged", actor: "KVIC Processing Unit, Satara", note: "Bottled into 42 × 250g jars; QR labels applied" },
+          { stage: "distributed", actor: "KVIC Distribution, Pune", note: "Shipped to Khadi Gramodyog Bhavan retailers" },
+        ],
       },
       {
-        stage: "processed" as const,
-        actor: "KVIC Processing Unit, Satara",
-        note: "Filtered and moisture-tested at KVIC unit",
+        batch_id: "HC-2026-0002",
+        hive_id: "HIVE-014",
+        beekeeper: bk1,
+        harvest_date: "2026-09-22",
+        quantity_kg: 8.0,
+        floral_source: "Wildflower (Karvi bloom)",
+        status: "created",
+        dates: {},
+        stageNotes: [],
       },
       {
-        stage: "packaged" as const,
-        actor: "KVIC Processing Unit, Satara",
-        note: "Bottled into 42 × 250g jars; QR labels applied",
+        batch_id: "HC-2026-0003",
+        hive_id: "HIVE-032",
+        beekeeper: bk1,
+        harvest_date: "2026-09-23",
+        quantity_kg: 6.2,
+        floral_source: "Ajwain",
+        status: "processed",
+        dates: { processing_date: "2026-09-24" },
+        stageNotes: [
+          { stage: "processed", actor: "KVIC Processing Unit, Satara", note: "Filtered and moisture-tested at KVIC unit" },
+        ],
+        },
+      {
+        batch_id: "HC-2026-0004",
+        hive_id: "HIVE-007",
+        beekeeper: bk2,
+        harvest_date: "2026-09-20",
+        quantity_kg: 15.0,
+        floral_source: "Mangrove (Khalshi)",
+        status: "packaged",
+        dates: {
+          processing_date: "2026-09-21",
+          packaging_date: "2026-09-22",
+        },
+        stageNotes: [
+          { stage: "processed", actor: "KVIC Processing Unit, Kolkata", note: "Filtered and moisture-tested at KVIC unit" },
+          { stage: "packaged", actor: "KVIC Processing Unit, Kolkata", note: "Bottled into 60 × 250g jars; QR labels applied" },
+        ],
       },
       {
-        stage: "distributed" as const,
-        actor: "KVIC Distribution, Pune",
-        note: "Shipped to Khadi Gramodyog Bhavan retailers",
+        batch_id: "HC-2026-0005",
+        hive_id: "HIVE-021",
+        beekeeper: bk2,
+        harvest_date: "2026-09-24",
+        quantity_kg: 4.5,
+        floral_source: "Mangrove (Khalshi)",
+        status: "created",
+        dates: {},
+        stageNotes: [],
       },
     ];
-    for (const s of stageDefs) {
-      const { block_number, tx_hash } = await appendStageBlock(ctx, {
-        batch_id: "HC-2026-0001",
-        stage: s.stage,
-        actor: s.actor,
-        note: s.note,
+
+    let lastBatchId = "";
+    for (const seed of batchSeeds) {
+      const created = await appendBatchBlock(ctx, {
+        batch_id: seed.batch_id,
+        hive_id: seed.hive_id,
+        beekeeper_id: seed.beekeeper.id,
+        beekeeper_name: seed.beekeeper.name,
+        harvest_date: seed.harvest_date,
+        quantity_kg: seed.quantity_kg,
+        floral_source: seed.floral_source,
         recorded_at: now,
+      });
+      await ctx.db.insert("honey_batches", {
+        batch_id: seed.batch_id,
+        hive_id: seed.hive_id,
+        beekeeper_id: seed.beekeeper.id,
+        beekeeper_name: seed.beekeeper.name,
+        harvest_date: seed.harvest_date,
+        harvest_location: hiveProfiles.find((h) => h.hive_id === seed.hive_id)?.location,
+        ...seed.dates,
+        quantity_kg: seed.quantity_kg,
+        floral_source: seed.floral_source,
+        status: seed.status,
+        content_hash: created.content_hash,
+        tx_hash: created.tx_hash,
+        block_number: created.block_number,
+        created_at: now,
       });
       await ctx.db.insert("traceability_records", {
-        batch_id: "HC-2026-0001",
-        stage: s.stage,
-        actor: s.actor,
-        note: s.note,
-        block_number,
-        tx_hash,
+        batch_id: seed.batch_id,
+        stage: "created",
+        actor: seed.beekeeper.name,
+        note: `Batch created from ${seed.hive_id} — ${seed.quantity_kg} kg ${seed.floral_source}`,
+        block_number: created.block_number,
+        tx_hash: created.tx_hash,
         recorded_at: now,
       });
+
+      // Stage blocks for batches with lifecycle history (chain-linked).
+      for (const s of seed.stageNotes) {
+        const { block_number, tx_hash } = await appendStageBlock(ctx, {
+          batch_id: seed.batch_id,
+          stage: s.stage,
+          actor: s.actor,
+          note: s.note,
+          recorded_at: now,
+        });
+        await ctx.db.insert("traceability_records", {
+          batch_id: seed.batch_id,
+          stage: s.stage,
+          actor: s.actor,
+          note: s.note,
+          block_number,
+          tx_hash,
+          recorded_at: now,
+        });
+      }
+      lastBatchId = seed.batch_id;
     }
 
     return {
       skipped: false as const,
       message:
-        "Seeded 3 hives, 24h sensor stream, AI predictions, and 1 batch with a 5-block traceability timeline.",
-      batch_id: "HC-2026-0001",
+        "Seeded 5 hives across 2 beekeepers, 24h sensor streams, AI predictions, alert history, and 5 batches with full traceability timelines.",
+      batch_id: lastBatchId,
     };
   },
 });

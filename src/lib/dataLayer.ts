@@ -24,6 +24,7 @@
  */
 
 import { useQuery, useMutation } from "convex/react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/convex/_generated/api";
 
 // ---- Entity types (mirror the DB schema 1:1) -------------------------------
@@ -102,6 +103,7 @@ export interface Alert {
   message: string;
   severity: string; // normal | warning | critical
   timestamp: number;
+  resolved_at?: number; // set once an operator closes the alert
 }
 
 export interface DashboardTotals {
@@ -122,9 +124,75 @@ export interface AiAnalysis {
   env_risk: string | null;
 }
 
-// ---- Singleton beekeeper identity (prototype; auth comes later) ------------
+// ---- Demo beekeeper profiles ---------------------------------------------
+// The prototype has no real per-user auth yet (Convex Auth provides the
+// session, not a KVIC beekeeper registry), so the active beekeeper is a DEMO
+// login selection: pick a profile → every query below is scoped to it.
+// SCALING: replace with authenticated user → beekeeper lookup.
+export interface BeekeeperProfile {
+  id: string;
+  name: string;
+}
 
-export const CURRENT_BEEKEEPER = { id: "BK-001", name: "Ramesh Patil" };
+export const BEEKEEPER_PROFILES: BeekeeperProfile[] = [
+  { id: "BK-001", name: "Ramesh Patil" },
+  { id: "BK-002", name: "Sunita Devi" },
+];
+
+/** Kept for backward compatibility (docs/tests referencing BK-001). */
+export const CURRENT_BEEKEEPER = BEEKEEPER_PROFILES[0];
+
+const ACTIVE_PROFILE_KEY = "honeychain.activeProfile";
+const PROFILE_EVENT = "honeychain:profile";
+
+function readActiveProfile(): BeekeeperProfile {
+  if (typeof window === "undefined") return BEEKEEPER_PROFILES[0];
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_PROFILE_KEY);
+    const id = raw != null ? (JSON.parse(raw) as string) : null;
+    return BEEKEEPER_PROFILES.find((p) => p.id === id) ?? BEEKEEPER_PROFILES[0];
+  } catch {
+    return BEEKEEPER_PROFILES[0];
+  }
+}
+
+function writeActiveProfile(p: BeekeeperProfile) {
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(ACTIVE_PROFILE_KEY, JSON.stringify(p.id));
+    } catch {
+      // storage unavailable (private mode) — profile stays in-memory only
+    }
+  }
+}
+
+/**
+ * DEMO LOGIN (no password): selects the active beekeeper profile.
+ * Persists to localStorage so the choice survives navigation; all components
+ * using this hook re-render reactively when the profile changes. Every data
+ * hook below takes the active profile's id so switching users switches their
+ * hives, batches and stats.
+ */
+export function useDemoProfile() {
+  const [profile, setProfileState] =
+    useState<BeekeeperProfile>(readActiveProfile);
+
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      const detail = (e as CustomEvent<BeekeeperProfile>).detail;
+      setProfileState(detail ?? readActiveProfile());
+    };
+    window.addEventListener(PROFILE_EVENT, onChange);
+    return () => window.removeEventListener(PROFILE_EVENT, onChange);
+  }, []);
+
+  const setProfile = useCallback((p: BeekeeperProfile) => {
+    writeActiveProfile(p);
+    window.dispatchEvent(new CustomEvent(PROFILE_EVENT, { detail: p }));
+  }, []);
+
+  return { profile, setProfile, profiles: BEEKEEPER_PROFILES };
+}
 
 // ============================================================================
 // QUERIES — UI components import these; each maps to one SQL-shaped read.
@@ -212,12 +280,48 @@ export function useCreateHive() {
   return useMutation(api.apiary.createHive);
 }
 
+/** Edit hive details (location / colony strength / status). */
+export function useUpdateHive() {
+  return useMutation(api.apiary.updateHive);
+}
+
+/** Remove a hive + its sensor/AI/alert history (batches stay on-chain). */
+export function useDeleteHive() {
+  return useMutation(api.apiary.deleteHive);
+}
+
+/** Associated-data preview used by the delete-confirmation dialog. */
+export function useHiveAssociations(hiveId: string) {
+  return useQuery(
+    api.apiary.getHiveAssociations,
+    hiveId ? { hive_id: hiveId } : "skip",
+  );
+}
+
+/** Mark an alert resolved (kept in history). */
+export function useResolveAlert() {
+  return useMutation(api.apiary.resolveAlert);
+}
+
+/** Alert history log for one hive (active + resolved, newest first). */
+export function useHiveAlertHistory(hiveId: string) {
+  return useQuery(
+    api.apiary.getHiveAlertHistory,
+    hiveId ? { hive_id: hiveId } : "skip",
+  ) as Alert[] | undefined;
+}
+
 export function usePushReading() {
   return useMutation(api.apiary.pushSimulatedReading);
 }
 
 export function useCreateBatch() {
   return useMutation(api.traceability.createBatch);
+}
+
+/** Edit a batch BEFORE finalization (seals a "batch_amended" ledger block). */
+export function useUpdateBatch() {
+  return useMutation(api.traceability.updateBatch);
 }
 
 /** Processor/Admin stage recording (→ new ledger block). */

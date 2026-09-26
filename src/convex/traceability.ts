@@ -92,6 +92,78 @@ export const createBatch = mutation({
 });
 
 /**
+ * EDIT a batch BEFORE finalization (status "created"): correct quantity,
+ * floral source, harvest date/location, or hive.
+ *
+ * BATCH METADATA IS HASH-SEALED at creation, so edits never silently rewrite
+ * history — instead a new "batch_amended" ledger block is appended with the
+ * corrected metadata (prev_hash links to the current chain head), keeping the
+ * chain and every earlier block verifiable. A lifecycle-in-progress or fully
+ * distributed batch is locked.
+ */
+export const updateBatch = mutation({
+  args: {
+    batch_id: v.string(),
+    hive_id: v.optional(v.string()),
+    harvest_date: v.optional(v.string()),
+    harvest_location: v.optional(v.string()),
+    quantity_kg: v.optional(v.number()),
+    floral_source: v.optional(v.string()),
+    actor: v.string(),
+  },
+  handler: async (ctx, input) => {
+    const batch = (
+      await ctx.db
+        .query("honey_batches")
+        .withIndex("by_batch_id", (q) => q.eq("batch_id", input.batch_id))
+        .take(1)
+    )[0];
+    if (!batch) throw new Error("Batch not found.");
+    if (batch.status !== "created") {
+      throw new Error(
+        `Batch ${batch.batch_id} is '${batch.status}' and can no longer be edited — only batches still in 'created' status are editable.`,
+      );
+    }
+
+    // Apply editable-field changes to the DB row.
+    const patch: Record<string, unknown> = {};
+    if (input.hive_id !== undefined)
+      patch.hive_id = input.hive_id.trim().toUpperCase();
+    if (input.harvest_date !== undefined) patch.harvest_date = input.harvest_date;
+    if (input.harvest_location !== undefined)
+      patch.harvest_location = input.harvest_location;
+    if (input.quantity_kg !== undefined) patch.quantity_kg = input.quantity_kg;
+    if (input.floral_source !== undefined) patch.floral_source = input.floral_source;
+    if (Object.keys(patch).length === 0) {
+      return { batch_id: batch.batch_id, block_number: batch.block_number, unchanged: true };
+    }
+    await ctx.db.patch(batch._id, patch);
+
+    // Seal the amendment as a new chained block (tamper-evident audit).
+    const { block_number, tx_hash } = await appendStageBlock(ctx, {
+      batch_id: batch.batch_id,
+      stage: "batch_amended",
+      actor: input.actor,
+      note: `Batch metadata amended: ${Object.keys(patch).join(", ")} → ${Object.values(patch).join(", ")}`,
+      recorded_at: Date.now(),
+    });
+    await ctx.db.insert("traceability_records", {
+      batch_id: batch.batch_id,
+      stage: "batch_amended",
+      actor: input.actor,
+      note: `Amended: ${Object.entries(patch)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(", ")}`,
+      block_number,
+      tx_hash,
+      recorded_at: Date.now(),
+    });
+
+    return { batch_id: batch.batch_id, block_number, tx_hash, unchanged: false };
+  },
+});
+
+/**
  * PROCESSOR / ADMIN ROLE: record a lifecycle stage (processed / packaged /
  * distributed) on the ledger. Creates a new chained block + traceability row.
  */

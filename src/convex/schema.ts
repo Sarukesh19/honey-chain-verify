@@ -97,12 +97,15 @@ const schema = defineSchema(
       recorded_at: v.number(),
     }).index("by_batch_id", ["batch_id"]),
 
-    /** Alerts feed for the future beekeeper dashboard (Module 2). */
+    /** Alerts feed for the future beekeeper dashboard (Module 2).
+     *  Rows are kept forever as an alert HISTORY log; `resolved_at` marks
+     *  when an operator closed the issue (undefined = still active). */
     alerts: defineTable({
       hive_id: v.string(),
       message: v.string(),
       severity: v.string(), // info | warning | critical
       timestamp: v.number(),
+      resolved_at: v.optional(v.number()),
     }).index("by_hive_id", ["hive_id"]),
 
     /** AI outputs (colony health classifier + yield regressor) (Module 3). */

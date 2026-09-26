@@ -93,6 +93,12 @@ All three pass ⇒ **"Blockchain Verified ✓"**. Any failure names the specific
 | `apiary.getHiveDetails` | query | `GET /hives/{id}` (readings + AI) |
 | `apiary.getAnalytics` | query | analytics series + health/production charts |
 | `apiary.createHive` | mutation | `POST /hives` |
+| `apiary.updateHive` | mutation | `PATCH /hives/{id}` (location / colony strength / status) |
+| `apiary.deleteHive` | mutation | `DELETE /hives/{id}` (cascades sensor/AI/alert history; ledger-sealed batches kept for traceability) |
+| `apiary.getHiveAssociations` | query | associated-data preview for the delete confirmation |
+| `apiary.getHiveAlertHistory` | query | `GET /hives/{id}/alerts` (full history incl. resolved) |
+| `apiary.resolveAlert` | mutation | `POST /alerts/{id}/resolve` (keeps row with `resolved_at`) |
+| `traceability.updateBatch` | mutation | `PATCH /batches/{id}` (edit BEFORE finalization; seals a `batch_amended` ledger block — never rewrites sealed data) |
 | `apiary.pushSimulatedReading` | mutation | `POST /sensor-data` (ingestion + alert rules) |
 | `apiary.getAlerts` | query | `GET /alerts` |
 | `apiary.resetDemo` | mutation | demo reset (prototype only) |
@@ -115,7 +121,22 @@ All three pass ⇒ **"Blockchain Verified ✓"**. Any failure names the specific
 bun convex run apiary:resetDemo '{}' && bun convex run demo:seedDemoData '{}'
 ```
 
-Re-seeds 3 hives (one per AI outcome), 24 h of Demo IoT Data, AI analyses with disease-risk %, and one batch with a complete 5-block lifecycle timeline.
+Re-seeds **5 hives across 2 beekeeper profiles** (BK-001 Ramesh Patil ×3 hives, BK-002 Sunita Devi ×2 hives — one per AI outcome), 24 h of Demo IoT Data, AI analyses with disease-risk %, an alert history including a **resolved** entry, and **5 batches** (BK-001: 12.5 + 8.0 + 6.2 = 26.7 kg; BK-002: 15.0 + 4.5 = 19.5 kg) with full lifecycle timelines.
+
+## Demo identity / multi-beekeeper login
+
+The prototype has no real per-user KVIC auth yet (Convex Auth protects the portal session, not a beekeeper registry), so the dashboard uses a **demo login**: pick a beekeeper profile in the header switcher ("Demo beekeeper (no real auth)") and every query — welcome name, hive list, totals, honey-produced stat, batches — re-scopes to that profile instantly. The choice persists via `localStorage` (`honeychain.activeProfile`). SCALING swap point: replace `useDemoProfile` in `src/lib/dataLayer.ts` with an authenticated user → beekeeper lookup.
+
+`total_produced_kg` sums **all** of the active beekeeper's batch quantities regardless of lifecycle status (a harvested-and-registered batch is produced), and every stat/list is a reactive Convex subscription, so add/edit/delete reflects everywhere without a refresh.
+
+## Verification certificate export
+
+The public `/verify/{batch_id}` page has **Share certificate** and **Download certificate (PNG)** buttons: the verification verdict card is rendered client-side to a 2× PNG via `@zumer/snapdom` (already a project dependency) and downloaded, or shared via the Web Share API on supporting devices.
+
+## Multi-hive comparison + alert history
+
+- `/hives` → **Compare hives** toggle: side-by-side table of every hive's status, temperature, humidity, weight, predicted 7-day yield and colony strength (Demo IoT Data · AI Prototype Analysis).
+- `/hives/{id}` → **Alert history** log: active and resolved alerts with timestamps and a one-click **Resolve** action (`alerts.resolved_at`), so the system visibly tracks issues over time rather than showing only a live snapshot.
 
 ## Roadmap beyond the prototype
 

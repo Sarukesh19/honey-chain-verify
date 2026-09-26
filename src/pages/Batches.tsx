@@ -11,9 +11,16 @@ import {
   Truck,
 } from "lucide-react";
 import { useState } from "react";
+import { Pencil } from "lucide-react";
 import { Link, useSearchParams } from "react-router";
 
-import { useAllBatches, useBatchTimeline, useRecordStage } from "@/lib/dataLayer";
+import {
+  useAllBatches,
+  useBatchTimeline,
+  useDemoProfile,
+  useRecordStage,
+  useUpdateBatch,
+} from "@/lib/dataLayer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +38,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Search } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
 interface TimelineEntry {
@@ -64,12 +72,26 @@ const stageOrder = ["created", "processed", "packaged", "distributed"];
 export default function Batches() {
   const [params] = useSearchParams();
   const selectedId = params.get("batch") ?? params.get("created") ?? "";
+  const { profile } = useDemoProfile();
 
   const allBatches = useAllBatches();
   const timeline = useBatchTimeline(selectedId);
   const recordStage = useRecordStage();
 
-  const list: Batch[] = allBatches ?? [];
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const all: Batch[] = allBatches ?? [];
+  const list = all.filter((b) => {
+    const q = query.trim().toLowerCase();
+    const matchesQuery =
+      q === "" ||
+      b.batch_id.toLowerCase().includes(q) ||
+      b.hive_id.toLowerCase().includes(q) ||
+      b.floral_source.toLowerCase().includes(q);
+    const matchesStatus = statusFilter === "all" || b.status === statusFilter;
+    return matchesQuery && matchesStatus;
+  });
 
   const [busyStage, setBusyStage] = useState<string | null>(null);
   const selected = list.find((b) => b.batch_id === selectedId) ?? null;
@@ -121,6 +143,31 @@ export default function Batches() {
             </p>
           </div>
           <AddBatchButton />
+        </div>
+
+        {/* Search / filter toolbar */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by batch ID, hive ID, or honey type…"
+              className="pl-9"
+            />
+          </div>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm capitalize"
+            aria-label="Filter by lifecycle status"
+          >
+            <option value="all">All statuses</option>
+            <option value="created">Created</option>
+            <option value="processed">Processed</option>
+            <option value="packaged">Packaged</option>
+            <option value="distributed">Distributed</option>
+          </select>
         </div>
 
         {/* Batch list */}
@@ -183,6 +230,9 @@ export default function Batches() {
                   {selected.batch_id}
                 </CardTitle>
                 <div className="flex flex-wrap gap-2">
+                  {selected.status === "created" && (
+                    <EditBatchDialog batch={selected} />
+                  )}
                   <Button asChild size="sm" className="gap-2">
                     <Link to={`/generate-qr?batch=${selected.batch_id}`}>
                       <QrCode className="size-4" />
@@ -206,6 +256,14 @@ export default function Batches() {
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
               {/* Details grid */}
+              {selected.status !== "created" && (
+                <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  This batch has entered the supply chain (status “{selected.status}”)
+                  — its sealed metadata is locked. Edits are only possible while a
+                  batch is still “created”, and every amendment is itself sealed on
+                  the ledger as a “batch_amended” block.
+                </p>
+              )}
               <div className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
                 {[
                   ["Batch ID", selected.batch_id],
@@ -304,6 +362,131 @@ export default function Batches() {
         )}
       </div>
     </main>
+  );
+}
+
+/**
+ * Edit batch metadata BEFORE finalization. Batch metadata is hash-sealed at
+ * creation, so an edit appends a new "batch_amended" ledger block (tamper-
+ * evident) rather than silently rewriting the sealed record.
+ */
+function EditBatchDialog({ batch }: { batch: Batch }) {
+  const updateBatch = useUpdateBatch();
+  const { profile } = useDemoProfile();
+  const [open, setOpen] = useState(false);
+  const [hiveId, setHiveId] = useState(batch.hive_id);
+  const [quantity, setQuantity] = useState(String(batch.quantity_kg));
+  const [floral, setFloral] = useState(batch.floral_source);
+  const [harvestDate, setHarvestDate] = useState(batch.harvest_date);
+  const [harvestLocation, setHarvestLocation] = useState(
+    batch.harvest_location ?? "",
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-2">
+          <Pencil className="size-4" />
+          Edit batch
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit batch {batch.batch_id}</DialogTitle>
+        </DialogHeader>
+        <p className="rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-xs leading-5 text-muted-foreground">
+          This batch is still in “created” status so its metadata is editable.
+          Every change is sealed on the ledger as a new “batch_amended” block —
+          nothing is rewritten silently.
+        </p>
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            setError(null);
+            try {
+              await updateBatch({
+                batch_id: batch.batch_id,
+                hive_id: hiveId.trim().toUpperCase(),
+                quantity_kg: Number(quantity),
+                floral_source: floral,
+                harvest_date: harvestDate,
+                harvest_location: harvestLocation || undefined,
+                actor: profile.name,
+              });
+              setOpen(false);
+            } catch (err) {
+              setError(
+                err instanceof Error ? err.message : "Failed to update batch.",
+              );
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="eb-hive">Hive ID</Label>
+              <Input
+                id="eb-hive"
+                value={hiveId}
+                onChange={(e) => setHiveId(e.target.value)}
+                className="font-mono uppercase"
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="eb-qty">Quantity (kg)</Label>
+              <Input
+                id="eb-qty"
+                type="number"
+                step="0.1"
+                min="0.1"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="eb-type">Honey type</Label>
+            <Input
+              id="eb-type"
+              value={floral}
+              onChange={(e) => setFloral(e.target.value)}
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="eb-date">Harvest date</Label>
+              <Input
+                id="eb-date"
+                type="date"
+                value={harvestDate}
+                onChange={(e) => setHarvestDate(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="eb-loc">Harvest location</Label>
+              <Input
+                id="eb-loc"
+                value={harvestLocation}
+                onChange={(e) => setHarvestLocation(e.target.value)}
+              />
+            </div>
+          </div>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          <Button type="submit" disabled={busy}>
+            {busy ? "Sealing amendment…" : "Save & seal amendment"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -83,14 +83,14 @@ export const getDashboard = query({
     const needsAttention = rows.filter((r) => r.status !== "healthy").length;
     const healthy = rows.filter((r) => r.status === "healthy").length;
 
-    // Total honey produced = sum of distributed + packaged batch quantities.
+    // Total honey produced = sum of quantity across ALL of this beekeeper's
+    // batches — a batch counts as produced from the moment it is harvested and
+    // registered (status "created"), not only once packaged/distributed.
+    // (BUG FIX: previously only packaged|distributed rows were summed, so
+    // freshly created batches never showed up until stage-recording.)
     const allBatches = await ctx.db.query("honey_batches").collect();
     const totalProducedKg = allBatches
-      .filter(
-        (b) =>
-          b.beekeeper_id === beekeeper_id &&
-          (b.status === "distributed" || b.status === "packaged"),
-      )
+      .filter((b) => b.beekeeper_id === beekeeper_id)
       .reduce((s, b) => s + b.quantity_kg, 0);
 
     // Recent batches for the dashboard list.
@@ -232,16 +232,13 @@ export const getAnalytics = query({
       else healthCounts.disease_risk++;
     }
 
-    // Production: actual (packaged+distributed) vs predicted (AI) per hive.
+    // Production: actual harvested (ALL batch quantities — consistent with
+    // the getDashboard total_produced_kg fix) vs predicted (AI) per hive.
     const batches = await ctx.db.query("honey_batches").collect();
     const predictions = await ctx.db.query("ai_predictions").collect();
     const production = targets.map((h) => {
       const actual = batches
-        .filter(
-          (b) =>
-            b.hive_id === h.hive_id &&
-            (b.status === "packaged" || b.status === "distributed"),
-        )
+        .filter((b) => b.hive_id === h.hive_id)
         .reduce((s, b) => s + b.quantity_kg, 0);
       const predicted = predictions
         .filter((p) => p.hive_id === h.hive_id)
@@ -346,6 +343,127 @@ export const createHive = mutation({
       timestamp: Date.now(),
     });
     return { hive_id: hiveId };
+  },
+});
+
+/** Edit an existing hive's details (location / colony strength / status). */
+export const updateHive = mutation({
+  args: {
+    hive_id: v.string(),
+    location: v.optional(v.string()),
+    colony_strength: v.optional(v.string()),
+    status: v.optional(v.string()), // healthy | warning | disease_risk
+  },
+  handler: async (ctx, { hive_id, ...patch }) => {
+    const hive = (
+      await ctx.db
+        .query("hives")
+        .withIndex("by_hive_id", (q) => q.eq("hive_id", hive_id))
+        .take(1)
+    )[0];
+    if (!hive) throw new Error(`Hive ${hive_id} not found.`);
+    const clean = Object.fromEntries(
+      Object.entries(patch).filter(([, v]) => v !== undefined),
+    );
+    if (Object.keys(clean).length > 0) await ctx.db.patch(hive._id, clean);
+    return { hive_id };
+  },
+});
+
+/**
+ * Remove a hive and its operational history (sensors, AI, alerts).
+ * Ledger-sealed honey batches are intentionally NOT deleted — they remain
+ * traceable on the chain; their hive reference is kept for provenance.
+ */
+export const deleteHive = mutation({
+  args: { hive_id: v.string() },
+  handler: async (ctx, { hive_id }) => {
+    const hive = (
+      await ctx.db
+        .query("hives")
+        .withIndex("by_hive_id", (q) => q.eq("hive_id", hive_id))
+        .take(1)
+    )[0];
+    if (!hive) throw new Error(`Hive ${hive_id} not found.`);
+
+    const sensorDocs = await ctx.db
+      .query("sensor_data")
+      .withIndex("by_hive_id", (q) => q.eq("hive_id", hive_id))
+      .collect();
+    for (const doc of sensorDocs) await ctx.db.delete(doc._id);
+
+    const predictionDocs = await ctx.db
+      .query("ai_predictions")
+      .withIndex("by_hive_id", (q) => q.eq("hive_id", hive_id))
+      .collect();
+    for (const doc of predictionDocs) await ctx.db.delete(doc._id);
+
+    const alertDocs = await ctx.db
+      .query("alerts")
+      .withIndex("by_hive_id", (q) => q.eq("hive_id", hive_id))
+      .collect();
+    for (const doc of alertDocs) await ctx.db.delete(doc._id);
+
+    const batchCount = (
+      await ctx.db.query("honey_batches").collect()
+    ).filter((b) => b.hive_id === hive_id).length;
+
+    await ctx.db.delete(hive._id);
+    return {
+      hive_id,
+      removed_sensor_readings: sensorDocs.length,
+      removed_predictions: predictionDocs.length,
+      removed_alerts: alertDocs.length,
+      batches_kept_for_traceability: batchCount,
+    };
+  },
+});
+
+/** Associated-data preview for the delete-confirmation dialog. */
+export const getHiveAssociations = query({
+  args: { hive_id: v.string() },
+  handler: async (ctx, { hive_id }) => {
+    const sensorCount = (
+      await ctx.db
+        .query("sensor_data")
+        .withIndex("by_hive_id", (q) => q.eq("hive_id", hive_id))
+        .collect()
+    ).length;
+    const batchCount = (
+      await ctx.db.query("honey_batches").collect()
+    ).filter((b) => b.hive_id === hive_id).length;
+    const alertCount = (
+      await ctx.db
+        .query("alerts")
+        .withIndex("by_hive_id", (q) => q.eq("hive_id", hive_id))
+        .collect()
+    ).length;
+    return {
+      sensor_readings: sensorCount,
+      honey_batches: batchCount,
+      alerts: alertCount,
+    };
+  },
+});
+
+/** Mark an alert resolved — the row stays as history with a resolved_at. */
+export const resolveAlert = mutation({
+  args: { alert_id: v.id("alerts") },
+  handler: async (ctx, { alert_id }) => {
+    await ctx.db.patch(alert_id, { resolved_at: Date.now() });
+    return { alert_id };
+  },
+});
+
+/** Full alert history for one hive, newest first (active + resolved). */
+export const getHiveAlertHistory = query({
+  args: { hive_id: v.string() },
+  handler: async (ctx, { hive_id }) => {
+    const alerts = await ctx.db
+      .query("alerts")
+      .withIndex("by_hive_id", (q) => q.eq("hive_id", hive_id))
+      .collect();
+    return alerts.sort((a, b) => b.timestamp - a.timestamp);
   },
 });
 

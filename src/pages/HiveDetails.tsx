@@ -7,6 +7,7 @@ import {
   Hexagon,
   MapPin,
   Thermometer,
+  Trash2,
 } from "lucide-react";
 import { Link, useParams } from "react-router";
 import {
@@ -19,7 +20,15 @@ import {
   YAxis,
 } from "recharts";
 
-import { useHiveDetails } from "@/lib/dataLayer";
+import {
+  DeleteHiveDialog,
+  EditHiveDialog,
+} from "@/components/hiveDialogs";
+import {
+  useHiveAlertHistory,
+  useHiveDetails,
+  useResolveAlert,
+} from "@/lib/dataLayer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +37,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Bell, BellOff, CheckCheck } from "lucide-react";
+import { useNavigate } from "react-router";
 
 const statusMeta: Record<string, { label: string; cls: string }> = {
   healthy: { label: "🟢 Healthy", cls: "bg-primary/12 text-primary border-primary/30" },
@@ -35,10 +46,13 @@ const statusMeta: Record<string, { label: string; cls: string }> = {
   disease_risk: { label: "🔴 Critical", cls: "bg-destructive/12 text-destructive border-destructive/30" },
 };
 
-/** HIVE DETAILS (Module 2 + 3): IoT charts + AI Smart Analytics. */
+/** HIVE DETAILS (Module 2 + 3): IoT charts + AI Smart Analytics + alert log. */
 export default function HiveDetails() {
   const { hiveId = "" } = useParams();
   const details = useHiveDetails(hiveId);
+  const alertHistory = useHiveAlertHistory(hiveId);
+  const resolveAlert = useResolveAlert();
+  const navigate = useNavigate();
 
   if (details === undefined) {
     return (
@@ -96,7 +110,7 @@ export default function HiveDetails() {
         {/* Header + status */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
+            <h1 className="flex flex-wrap items-center gap-2 text-2xl font-bold tracking-tight">
               {hive.hive_id}
               <span
                 className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta.cls}`}
@@ -108,6 +122,35 @@ export default function HiveDetails() {
               <MapPin className="size-3.5" />
               {hive.location}
             </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <EditHiveDialog
+              hive={{
+                hive_id: hive.hive_id,
+                location: hive.location,
+                colony_strength: hive.colony_strength,
+                status: hive.status,
+              }}
+              trigger={
+                <Button variant="outline" size="sm" className="gap-2">
+                  Edit hive
+                </Button>
+              }
+            />
+            <DeleteHiveDialog
+              hiveId={hive.hive_id}
+              trigger={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="size-4" />
+                  Remove
+                </Button>
+              }
+              onDeleted={() => navigate("/hives")}
+            />
           </div>
         </div>
 
@@ -208,6 +251,83 @@ export default function HiveDetails() {
             </Card>
           </motion.div>
         )}
+
+        {/* ALERT HISTORY LOG (Module 8) — past + active alerts with resolve */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <Bell className="size-4 text-primary" />
+              Alert history
+              <span className="text-[10px] font-normal text-muted-foreground">
+                (active + resolved issues tracked over time · Demo IoT Data)
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {alertHistory === undefined ? (
+              <p className="py-2 text-sm text-muted-foreground">Loading alert history…</p>
+            ) : alertHistory.length === 0 ? (
+              <div className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-4">
+                <BellOff className="size-5 shrink-0 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">No alerts recorded for this hive</p>
+                  <p className="text-xs text-muted-foreground">
+                    All simulated sensor readings have stayed within healthy bands.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              alertHistory.map((a) => {
+                const resolved = a.resolved_at !== undefined;
+                return (
+                  <div
+                    key={a._id}
+                    className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 ${
+                      resolved ? "border-border/60 bg-muted/30" : "border-yellow-500/30 bg-yellow-500/5"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p
+                        className={`text-sm ${resolved ? "text-muted-foreground line-through" : ""}`}
+                      >
+                        {a.message}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {new Date(a.timestamp).toLocaleString()}
+                        {resolved &&
+                          ` · resolved ${new Date(a.resolved_at ?? 0).toLocaleString()}`}
+                      </p>
+                    </div>
+                    {resolved ? (
+                      <Badge variant="secondary" className="shrink-0 gap-1 text-[10px]">
+                        <CheckCheck className="size-3 text-primary" />
+                        Resolved
+                      </Badge>
+                    ) : (
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Badge
+                          variant={a.severity === "critical" ? "destructive" : "secondary"}
+                          className="text-[10px]"
+                        >
+                          {a.severity === "critical" ? "🔴 Critical" : "🟡 Warning"}
+                        </Badge>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 gap-1.5 text-xs"
+                          onClick={() => resolveAlert({ alert_id: a._id as never })}
+                        >
+                          <CheckCheck className="size-3.5" />
+                          Resolve
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
 
         {/* Sensor charts (Module 9) */}
         <div className="grid gap-4 lg:grid-cols-2">

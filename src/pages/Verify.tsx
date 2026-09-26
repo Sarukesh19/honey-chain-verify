@@ -6,9 +6,11 @@ import {
   Calendar,
   Droplets,
   FlaskConical,
+  Download,
   Hexagon,
   Link2,
   Loader2,
+  Share2,
   MapPin,
   Package,
   ShieldAlert,
@@ -18,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { Link, useParams } from "react-router";
+import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { api } from "@/convex/_generated/api";
@@ -146,10 +149,77 @@ interface VerifyResult {
 function VerifiedReport({ result }: { result: VerifyResult }) {
   const { batch, hive, integrity, timeline } = result;
   const verified = integrity?.chain_intact ?? false;
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  /**
+   * EXPORT / SHARE — render the verdict card to a PNG certificate via snapdom
+   * (same library the preview toolbar uses), then download it and offer Web
+   * Share on mobile. Prototype feature: the image is generated client-side
+   * from the live verification data.
+   */
+  const exportCertificate = async (share: boolean) => {
+    if (!cardRef.current) return;
+    setBusy(true);
+    try {
+      const { snapdom } = await import("@zumer/snapdom");
+      const canvas = await snapdom.toCanvas(cardRef.current, {
+        fast: false,
+        scale: 2,
+      });
+      const dataUrl = canvas.toDataURL("image/png");
+      if (share && typeof navigator.share === "function") {
+        const blob = await (await fetch(dataUrl)).blob();
+        const file = new File([blob], `honey-chain-certificate-${batch.batch_id}.png`, {
+          type: "image/png",
+        });
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({
+            title: `Honey Chain Certificate — ${batch.batch_id}`,
+            text: `Batch ${batch.batch_id} verified on the Honey Chain ledger.`,
+            files: [file],
+          });
+          return;
+        }
+      }
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = `honey-chain-certificate-${batch.batch_id}.png`;
+      a.click();
+    } catch (err) {
+      console.error("Certificate export failed:", err);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6">
-      {/* ---- Verification verdict ---- */}
+      {/* ---- Export / share actions ---- */}
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-2"
+          disabled={busy}
+          onClick={() => void exportCertificate(true)}
+        >
+          <Share2 className="size-4" />
+          Share certificate
+        </Button>
+        <Button
+          size="sm"
+          className="gap-2"
+          disabled={busy}
+          onClick={() => void exportCertificate(false)}
+        >
+          <Download className="size-4" />
+          Download certificate (PNG)
+        </Button>
+      </div>
+
+      {/* ---- Verification verdict (captured as the certificate) ---- */}
+      <div ref={cardRef}>
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -204,6 +274,7 @@ function VerifiedReport({ result }: { result: VerifyResult }) {
           </CardContent>
         </Card>
       </motion.div>
+      </div>
 
       {/* ---- Product details ---- */}
       <motion.div
